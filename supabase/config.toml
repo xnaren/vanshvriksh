@@ -1,0 +1,36 @@
+# VanshVriksh — local Supabase stack config.
+# Usage: `npx supabase start` inside Codespaces. The CLI runs Postgres, Auth,
+# Studio, and a fake mail inbox (Inbucket, for catching OTP emails) as Docker
+# containers. No supabase.com account needed for development.
+#
+# If a newer CLI ever complains about this file, delete it and run
+# `npx supabase init`, then re-apply your migrations.
+
+project_id = "vanshvriksh"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+# Email OTP is enabled by default. Locally, OTP emails are caught by Inbucket
+# (http://localhost:54324) instead of being sent — perfect for testing login.
