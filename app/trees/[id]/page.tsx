@@ -5,7 +5,7 @@ import { getTreeRole } from "@/lib/auth";
 import AddRelativeForm from "@/components/AddRelativeForm";
 import TreeView from "@/components/TreeView";
 import InvitePanel from "@/components/InvitePanel";
-import type { Person, SpouseLink } from "@/lib/types";
+import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
 
 export default async function TreePage({
   params,
@@ -42,10 +42,14 @@ export default async function TreePage({
     .select("*")
     .eq("tree_id", treeId);
 
-  const { data: roster } = await supabase
+  const { data: rosterData } = await supabase
     .from("tree_members")
     .select("role, profiles (username)")
     .eq("tree_id", treeId);
+
+  // supabase-js (untyped client) infers the embedded `profiles` as an array;
+  // at runtime PostgREST returns this many-to-one join as an object (or null).
+  const roster = (rosterData ?? []) as unknown as RosterEntry[];
 
   const personList = (persons ?? []) as Person[];
   const spouseList = (spouses ?? []) as SpouseLink[];
@@ -81,7 +85,7 @@ export default async function TreePage({
           <div className="card">
             <h3 className="font-semibold mb-2">Members</h3>
             <ul className="text-sm space-y-1">
-              {(roster ?? []).map((m: { role: string; profiles: { username: string } | null }, i: number) => (
+              {roster.map((m, i) => (
                 <li key={i} className="flex justify-between">
                   <span>{m.profiles?.username ?? "—"}</span>
                   <span className="text-stone-500">{m.role}</span>
