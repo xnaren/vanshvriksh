@@ -54,6 +54,15 @@ export interface TreeMember {
   created_at: string;
 }
 
+// Roster row for the tree members list: role + joined profile username.
+// NOTE: without generated Database types, supabase-js infers embedded
+// resources as arrays; at runtime PostgREST returns this many-to-one join
+// as a single object (or null), so cast explicitly like Person[]/SpouseLink[].
+export interface RosterEntry {
+  role: string;
+  profiles: { username: string } | null;
+}
+
 export type Relation =
   | "father"
   | "mother"
