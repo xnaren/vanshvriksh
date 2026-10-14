@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import TurnstileWidget from "@/components/TurnstileWidget";
 import { requestLoginOtp, verifyLoginOtp } from "./actions";
+import { devSignIn } from "./dev-actions";
 
 function LoginForm() {
   const router = useRouter();
@@ -120,6 +121,18 @@ function LoginForm() {
             }}
           >
             Use a different username
+          </button>
+        </form>
+      )}
+
+      {/* DEV-ONLY: one-click sign-in for local development. Not rendered in
+          production builds (NODE_ENV is inlined at build time), and the
+          server action itself refuses to run in production. Remove along
+          with app/login/dev-actions.ts before going live. */}
+      {process.env.NODE_ENV !== "production" && (
+        <form action={devSignIn} className="mt-4">
+          <button type="submit" className="btn-secondary w-full">
+            ⚙️ Dev sign-in (one click, local only)
           </button>
         </form>
       )}
