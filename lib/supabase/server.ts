@@ -2,7 +2,7 @@
 // Reads/writes the auth session via cookies. RLS still applies — this client
 // acts as the logged-in user, NOT as an admin.
 import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
+import { type CookieOptions, createServerClient } from "@supabase/ssr";
 
 export function createClient() {
   const cookieStore = cookies();
@@ -15,7 +15,7 @@ export function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
