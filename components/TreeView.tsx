@@ -16,7 +16,7 @@
 // (e.g. d3-dag) is the eventual answer; the data model already supports it.
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Person, SpouseLink } from "@/lib/types";
 import { deletePerson } from "@/app/trees/[id]/actions";
 import EditPersonModal from "./EditPersonModal";
@@ -154,13 +154,23 @@ function PersonCard({
   return (
     <div className="relative bg-white border border-stone-200 rounded-xl pl-2.5 pr-2 py-2 shadow-sm w-48 shrink-0">
       <div className="flex items-center gap-2.5">
-        {/* photo placeholder — initials until photo upload lands */}
-        <div
-          className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-semibold text-sm shrink-0"
-          title={details || name}
-        >
-          {initials(p)}
-        </div>
+        {/* avatar: uploaded photo when set, initials otherwise */}
+        {p.photo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={p.photo_url}
+            alt={name}
+            className="w-10 h-10 rounded-full object-cover shrink-0 border border-stone-200"
+            title={details || name}
+          />
+        ) : (
+          <div
+            className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-semibold text-sm shrink-0"
+            title={details || name}
+          >
+            {initials(p)}
+          </div>
+        )}
         <div className="min-w-0 pr-1">
           <div className="font-medium text-sm leading-tight truncate" title={name}>
             {name}
@@ -204,6 +214,41 @@ export default function TreeView({
 }) {
   const [editing, setEditing] = useState<Person | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  /* ----- zoom ----- */
+  const [zoom, setZoom] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLUListElement>(null);
+  const clampZoom = (z: number) =>
+    Math.min(2.5, Math.max(0.3, Math.round(z * 100) / 100));
+  const zoomBy = (delta: number) => setZoom((z) => clampZoom(z + delta));
+
+  function fitToView() {
+    const c = containerRef.current;
+    const t = treeRef.current;
+    if (!c || !t) return;
+    // CSS `zoom` scales layout, so divide back out to get the natural size.
+    const naturalW = t.offsetWidth / zoom;
+    const naturalH = t.offsetHeight / zoom;
+    if (!naturalW || !naturalH) return;
+    setZoom(
+      clampZoom(Math.min(c.clientWidth / naturalW, c.clientHeight / naturalH, 1))
+    );
+  }
+
+  // Ctrl/Cmd + wheel zooms the canvas (page scroll otherwise).
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom((z) => clampZoom(z - Math.sign(e.deltaY) * 0.12));
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   async function handleDelete(p: Person) {
     if (
@@ -317,9 +362,58 @@ export default function TreeView({
   }
 
   return (
-    <div className="vv-canvas card overflow-x-auto">
-      {deletingId && <p className="text-xs text-stone-500 mb-2">Deleting…</p>}
-      <ul className="vv-tree flex gap-14 items-start justify-start min-w-max px-2 py-2">
+    <div
+      ref={containerRef}
+      className="vv-canvas card overflow-auto relative h-[70vh] min-h-[440px]"
+    >
+      {/* zoom toolbar */}
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white/95 border border-stone-200 rounded-full shadow-sm px-1.5 py-1">
+        <button
+          type="button"
+          title="Zoom out"
+          aria-label="Zoom out"
+          onClick={() => zoomBy(-0.15)}
+          className="w-7 h-7 flex items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 text-lg leading-none"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          title="Reset zoom to 100%"
+          aria-label="Reset zoom"
+          onClick={() => setZoom(1)}
+          className="min-w-[3rem] h-7 px-1 text-xs text-stone-600 hover:bg-stone-100 rounded-full tabular-nums"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          title="Zoom in"
+          aria-label="Zoom in"
+          onClick={() => zoomBy(0.15)}
+          className="w-7 h-7 flex items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 text-lg leading-none"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          title="Fit tree to view"
+          aria-label="Fit tree to view"
+          onClick={fitToView}
+          className="h-7 px-2 text-xs text-stone-600 hover:bg-stone-100 rounded-full"
+        >
+          Fit
+        </button>
+      </div>
+
+      {deletingId && (
+        <p className="text-xs text-stone-500 mb-2">Deleting…</p>
+      )}
+      <ul
+        ref={treeRef}
+        style={{ zoom }}
+        className="vv-tree flex gap-14 items-start justify-start min-w-max px-2 py-2"
+      >
         {roots.map((p) => renderFamily(p, true))}
       </ul>
       {editing && (

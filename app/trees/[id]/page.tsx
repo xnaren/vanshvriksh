@@ -69,44 +69,41 @@ export default async function TreePage({
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <h2 className="font-semibold mb-3">Family tree</h2>
-          <TreeView
-            persons={personList}
-            spouses={spouseList}
+      {/* Tree gets the full width — management panels move below it. */}
+      <h2 className="font-semibold mb-3">Family tree</h2>
+      <TreeView
+        persons={personList}
+        spouses={spouseList}
+        treeId={treeId}
+        canEdit={canEdit}
+      />
+
+      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6">
+        {canEdit && (
+          <AddRelativeForm
             treeId={treeId}
-            canEdit={canEdit}
+            persons={personList.map((p) => ({
+              id: p.id,
+              given_name: p.given_name,
+              family_name: p.family_name,
+            }))}
           />
-        </div>
+        )}
+        {canEdit && <InvitePanel treeId={treeId} />}
+        {role === "owner" && (
+          <TreeSettings treeId={treeId} currentName={tree.name} />
+        )}
 
-        <div className="space-y-6">
-          {canEdit && (
-            <AddRelativeForm
-              treeId={treeId}
-              persons={personList.map((p) => ({
-                id: p.id,
-                given_name: p.given_name,
-                family_name: p.family_name,
-              }))}
-            />
-          )}
-          {canEdit && <InvitePanel treeId={treeId} />}
-          {role === "owner" && (
-            <TreeSettings treeId={treeId} currentName={tree.name} />
-          )}
-
-          <div className="card">
-            <h3 className="font-semibold mb-2">Members</h3>
-            <ul className="text-sm space-y-1">
-              {roster.map((m, i) => (
-                <li key={i} className="flex justify-between">
-                  <span>{m.profiles?.username ?? "—"}</span>
-                  <span className="text-stone-500">{m.role}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <div className="card">
+          <h3 className="font-semibold mb-2">Members</h3>
+          <ul className="text-sm space-y-1">
+            {roster.map((m, i) => (
+              <li key={i} className="flex justify-between">
+                <span>{m.profiles?.username ?? "—"}</span>
+                <span className="text-stone-500">{m.role}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>
