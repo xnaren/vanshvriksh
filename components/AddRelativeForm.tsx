@@ -5,7 +5,7 @@
 // actions wire father_id / mother_id / spouses automatically.
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { RELATIONS, type Person, type Relation } from "@/lib/types";
 import { addRelative, addRootPerson, linkRelative } from "@/app/trees/[id]/actions";
 
@@ -23,6 +23,20 @@ export default function AddRelativeForm({
   const [existingId, setExistingId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  // The "+" icon on a tree card dispatches this to pre-select that person.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail?.personId as string | undefined;
+      if (id && persons.some((p) => p.id === id)) {
+        setRelativeToId(id);
+        setMode("create");
+        setMsg("");
+      }
+    };
+    window.addEventListener("vv-select-relative", handler);
+    return () => window.removeEventListener("vv-select-relative", handler);
+  }, [persons]);
 
   const linkMode = !isFirst && mode === "link";
   const linkCandidates = persons.filter((p) => p.id !== relativeToId);
@@ -50,7 +64,7 @@ export default function AddRelativeForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="card space-y-3">
+    <form id="add-member-form" onSubmit={onSubmit} className="card space-y-3 scroll-mt-4">
       <h3 className="font-semibold">
         {isFirst ? "Add the first person" : "Add a relative"}
       </h3>

@@ -21,3 +21,82 @@ button[type="submit"], .btn-primary {
 .card {
   @apply bg-white border border-stone-200 rounded-lg shadow-sm p-4;
 }
+
+/* ---- Family-tree canvas ---- */
+.vv-canvas {
+  background-color: #fafaf9;
+  background-image: radial-gradient(circle, #e7e5e4 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Classic pedigree connectors, drawn with CSS.
+ * Each family unit (couple + children) is an <li class="vv-family">;
+ * its children sit in <ul class="vv-children"> below it. */
+.vv-tree,
+.vv-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vv-tree ul.vv-children {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 30px;
+  position: relative;
+}
+
+/* vertical drop from the couple/marriage node to the sibship line */
+.vv-tree ul.vv-children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 30px;
+  width: 0;
+  border-left: 2px solid #a7d7c5;
+}
+
+.vv-tree li.vv-family {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 16px 0;
+  flex-shrink: 0;
+}
+
+/* horizontal sibship line halves */
+.vv-tree li.vv-family::before,
+.vv-tree li.vv-family::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 50%;
+  width: 50%;
+  height: 30px;
+  border-top: 2px solid #a7d7c5;
+}
+.vv-tree li.vv-family::after {
+  right: auto;
+  left: 50%;
+  border-left: 2px solid #a7d7c5;
+}
+
+/* single child: no sibship line, straight drop from parents */
+.vv-tree li.vv-family:only-child::before,
+.vv-tree li.vv-family:only-child::after {
+  display: none;
+}
+.vv-tree li.vv-family:first-child::before,
+.vv-tree li.vv-family:last-child::after {
+  border: 0 none;
+}
+.vv-tree li.vv-family:first-child::after {
+  border-radius: 8px 0 0 0;
+}
+.vv-tree li.vv-family:last-child::before {
+  border-right: 2px solid #a7d7c5;
+  border-radius: 0 8px 0 0;
+}
