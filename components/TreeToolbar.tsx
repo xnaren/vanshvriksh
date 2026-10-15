@@ -1,11 +1,25 @@
-// Top-right tree toolbar: member count, role badge, tree-members popover,
-// member search (placeholder for now), and owner-only delete-tree icon.
+// Top-right tree control strip: add-member, tree-members popover, member
+// search (placeholder), invite popover, settings popover, owner-only
+// delete-tree icon — plus the role pill. The member count lives on the
+// "+" tooltip to keep the bar minimal.
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTree } from "@/app/trees/[id]/actions";
-import type { RosterEntry } from "@/lib/types";
+import type { Person, RosterEntry } from "@/lib/types";
+import AddRelativeModal from "./AddRelativeModal";
+import InvitePanel from "./InvitePanel";
+import TreeSettings from "./TreeSettings";
+
+function PlusIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
 
 function UsersIcon() {
   return (
@@ -27,6 +41,24 @@ function SearchIcon() {
   );
 }
 
+function InviteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -42,12 +74,14 @@ function ToolButton({
   onClick,
   danger,
   disabled,
+  active,
   children,
 }: {
   title: string;
   onClick?: () => void;
   danger?: boolean;
   disabled?: boolean;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -57,12 +91,14 @@ function ToolButton({
       aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className={`w-8 h-8 flex items-center justify-center rounded-full border border-stone-200 bg-white shadow-sm transition-colors ${
+      className={`w-8 h-8 flex items-center justify-center rounded-full border shadow-sm transition-colors ${
         disabled
-          ? "text-stone-300 cursor-not-allowed"
-          : danger
-            ? "text-stone-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
-            : "text-stone-500 hover:text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50"
+          ? "text-stone-300 border-stone-200 bg-white cursor-not-allowed"
+          : active
+            ? "text-emerald-700 border-emerald-300 bg-emerald-50"
+            : danger
+              ? "text-stone-500 border-stone-200 bg-white hover:text-red-600 hover:border-red-200 hover:bg-red-50"
+              : "text-stone-500 border-stone-200 bg-white hover:text-emerald-700 hover:border-emerald-200 hover:bg-emerald-50"
       }`}
     >
       {children}
@@ -70,24 +106,34 @@ function ToolButton({
   );
 }
 
+type Panel = "members" | "invite" | "settings" | null;
+
 export default function TreeToolbar({
   treeId,
   treeName,
   memberCount,
   role,
+  canEdit,
   isOwner,
+  persons,
   roster,
 }: {
   treeId: string;
   treeName: string;
   memberCount: number;
   role: string;
+  canEdit: boolean;
   isOwner: boolean;
+  persons: Pick<Person, "id" | "given_name" | "family_name">[];
   roster: RosterEntry[];
 }) {
   const router = useRouter();
-  const [showRoster, setShowRoster] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const toggle = (p: Exclude<Panel, null>) =>
+    setPanel((cur) => (cur === p ? null : p));
 
   async function onDeleteTree() {
     if (
@@ -111,30 +157,38 @@ export default function TreeToolbar({
     }
   }
 
+  const countLabel = `${memberCount} ${memberCount === 1 ? "member" : "members"}`;
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-stone-500">
-        {memberCount} {memberCount === 1 ? "member" : "members"}
-      </span>
-      <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1">
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1 mr-1">
         your role: {role}
       </span>
 
+      {canEdit && (
+        <ToolButton
+          title={`Add member · ${countLabel} in tree`}
+          onClick={() => setAdding(true)}
+        >
+          <PlusIcon />
+        </ToolButton>
+      )}
+
       <div className="relative">
         <ToolButton
-          title="Tree members (app users)"
-          onClick={() => setShowRoster((v) => !v)}
+          title={`Tree members · ${countLabel}`}
+          active={panel === "members"}
+          onClick={() => toggle("members")}
         >
           <UsersIcon />
         </ToolButton>
-        {showRoster && (
+        {panel === "members" && (
           <>
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setShowRoster(false)}
-            />
+            <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
             <div className="absolute right-0 top-full mt-2 z-50 w-60 bg-white border border-stone-200 rounded-lg shadow-lg p-3">
-              <h4 className="text-sm font-semibold mb-2">Tree members</h4>
+              <h4 className="text-sm font-semibold mb-2">
+                Tree members · {memberCount}
+              </h4>
               {roster.length === 0 ? (
                 <p className="text-xs text-stone-500">No members yet.</p>
               ) : (
@@ -156,6 +210,48 @@ export default function TreeToolbar({
         <SearchIcon />
       </ToolButton>
 
+      {canEdit && (
+        <div className="relative">
+          <ToolButton
+            title="Invite family"
+            active={panel === "invite"}
+            onClick={() => toggle("invite")}
+          >
+            <InviteIcon />
+          </ToolButton>
+          {panel === "invite" && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
+              <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white border border-stone-200 rounded-lg shadow-lg p-4">
+                <h4 className="text-sm font-semibold mb-3">Invite family</h4>
+                <InvitePanel treeId={treeId} bare />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="relative">
+          <ToolButton
+            title="Tree settings"
+            active={panel === "settings"}
+            onClick={() => toggle("settings")}
+          >
+            <GearIcon />
+          </ToolButton>
+          {panel === "settings" && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
+              <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white border border-stone-200 rounded-lg shadow-lg p-4">
+                <h4 className="text-sm font-semibold mb-3">Tree settings</h4>
+                <TreeSettings treeId={treeId} currentName={treeName} bare />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {isOwner && (
         <ToolButton
           title="Delete this tree"
@@ -165,6 +261,14 @@ export default function TreeToolbar({
         >
           <TrashIcon />
         </ToolButton>
+      )}
+
+      {adding && (
+        <AddRelativeModal
+          treeId={treeId}
+          persons={persons}
+          onClose={() => setAdding(false)}
+        />
       )}
     </div>
   );

@@ -4,7 +4,14 @@
 import { useState } from "react";
 import { createInvite } from "@/app/trees/[id]/actions";
 
-export default function InvitePanel({ treeId }: { treeId: string }) {
+export default function InvitePanel({
+  treeId,
+  bare,
+}: {
+  treeId: string;
+  /** Render without the outer card chrome (for embedding in a popover). */
+  bare?: boolean;
+}) {
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,8 +37,8 @@ export default function InvitePanel({ treeId }: { treeId: string }) {
   }
 
   return (
-    <div className="card space-y-3">
-      <h3 className="font-semibold">Invite family</h3>
+    <div className={bare ? "space-y-3" : "card space-y-3"}>
+      {!bare && <h3 className="font-semibold">Invite family</h3>}
       <div className="flex gap-2">
         <select
           value={role}

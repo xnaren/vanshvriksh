@@ -1,11 +1,9 @@
-// Tree detail page: pedigree view, relation-based adding, invites, roster.
+// Tree detail page: full-width pedigree canvas with a control-strip
+// toolbar; add/invite/settings live behind toolbar icons.
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getTreeRole } from "@/lib/auth";
-import AddRelativeForm from "@/components/AddRelativeForm";
 import TreeView from "@/components/TreeView";
-import InvitePanel from "@/components/InvitePanel";
-import TreeSettings from "@/components/TreeSettings";
 import TreeToolbar from "@/components/TreeToolbar";
 import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
 
@@ -65,12 +63,17 @@ export default async function TreePage({
           treeName={tree.name}
           memberCount={personList.length}
           role={role}
+          canEdit={canEdit}
           isOwner={role === "owner"}
+          persons={personList.map((p) => ({
+            id: p.id,
+            given_name: p.given_name,
+            family_name: p.family_name,
+          }))}
           roster={roster}
         />
       </div>
 
-      {/* Tree gets the full width — management panels move below it. */}
       <h2 className="font-semibold mb-3">Family tree</h2>
       <TreeView
         persons={personList}
@@ -78,23 +81,6 @@ export default async function TreePage({
         treeId={treeId}
         canEdit={canEdit}
       />
-
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
-        {canEdit && (
-          <AddRelativeForm
-            treeId={treeId}
-            persons={personList.map((p) => ({
-              id: p.id,
-              given_name: p.given_name,
-              family_name: p.family_name,
-            }))}
-          />
-        )}
-        {canEdit && <InvitePanel treeId={treeId} />}
-        {role === "owner" && (
-          <TreeSettings treeId={treeId} currentName={tree.name} />
-        )}
-      </div>
     </div>
   );
 }

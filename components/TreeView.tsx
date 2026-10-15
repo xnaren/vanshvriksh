@@ -437,7 +437,7 @@ export default function TreeView({
   return (
     <div
       ref={containerRef}
-      className="vv-canvas card overflow-auto relative h-[70vh] min-h-[440px] flex"
+      className="vv-canvas card overflow-auto relative h-[calc(100vh-12rem)] min-h-[440px] flex"
       style={{ cursor: panning ? "grabbing" : undefined }}
       onMouseDown={onPanStart}
       onMouseMove={onPanMove}

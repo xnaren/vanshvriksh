@@ -13,12 +13,15 @@ export default function AddRelativeModal({
 }: {
   treeId: string;
   persons: Pick<Person, "id" | "given_name" | "family_name">[];
-  relativeTo: Pick<Person, "id" | "given_name" | "family_name">;
+  /** Pre-select "relative of". Omit to let the user pick in the form. */
+  relativeTo?: Pick<Person, "id" | "given_name" | "family_name">;
   onClose: () => void;
 }) {
-  const name = `${relativeTo.given_name}${
-    relativeTo.family_name ? " " + relativeTo.family_name : ""
-  }`;
+  const name = relativeTo
+    ? `${relativeTo.given_name}${
+        relativeTo.family_name ? " " + relativeTo.family_name : ""
+      }`
+    : null;
 
   return (
     <div
@@ -30,7 +33,9 @@ export default function AddRelativeModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold">Add a relative of {name}</h3>
+          <h3 className="text-lg font-bold">
+            {name ? `Add a relative of ${name}` : "Add a relative"}
+          </h3>
           <button
             type="button"
             className="text-stone-400 hover:text-stone-700 text-xl leading-none px-2"
@@ -43,7 +48,7 @@ export default function AddRelativeModal({
         <AddRelativeForm
           treeId={treeId}
           persons={persons}
-          initialRelativeToId={relativeTo.id}
+          initialRelativeToId={relativeTo?.id}
           onDone={onClose}
           bare
         />
