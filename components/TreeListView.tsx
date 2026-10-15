@@ -1,17 +1,15 @@
 // Outline ("folder") view of the tree: collapsible rows like a file
 // explorer. Each family unit is a person row (plus a spouse row when the
 // spouse pairs up), with children nested and indented beneath it.
+//
+// The unit plan is computed purely by buildFamilyUnits (no shared mutable
+// state during React rendering) so server and client always agree — see
+// tree-graph.ts for why this matters for hydration.
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Person, SpouseLink } from "@/lib/types";
-import {
-  buildTreeGraph,
-  pairSpouse,
-  unpairedSpouse,
-  unitChildren,
-  type TreeGraph,
-} from "./tree-graph";
+import { buildFamilyUnits, type FamilyUnit } from "./tree-graph";
 import MemberCard, { displayName } from "./MemberCard";
 import type { ViewCallbacks } from "./PedigreeView";
 
@@ -35,26 +33,17 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 function UnitRows({
-  p,
-  graph,
-  shown,
+  unit,
   cb,
   collapsed,
   toggle,
 }: {
-  p: Person;
-  graph: TreeGraph;
-  shown: Set<string>;
+  unit: FamilyUnit;
   cb: ViewCallbacks;
   collapsed: Set<string>;
   toggle: (id: string) => void;
 }) {
-  if (shown.has(p.id)) return null; // guard against cycles
-  shown.add(p.id);
-
-  const pairWith = pairSpouse(graph, p, shown);
-  const spouse = unpairedSpouse(graph, p, pairWith, shown);
-  const children = unitChildren(graph, p, pairWith);
+  const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
   const isCollapsed = collapsed.has(p.id);
 
   const card = (person: Person) => (
@@ -105,10 +94,8 @@ function UnitRows({
         <div className="ml-[18px] border-l-2 border-emerald-200 pl-4">
           {children.map((c) => (
             <UnitRows
-              key={c.id}
-              p={c}
-              graph={graph}
-              shown={shown}
+              key={c.main.id}
+              unit={c}
               cb={cb}
               collapsed={collapsed}
               toggle={toggle}
@@ -129,8 +116,10 @@ export default function TreeListView({
   spouses: SpouseLink[];
   cb: ViewCallbacks;
 }) {
-  const graph = buildTreeGraph(persons, spouses);
-  const shown = new Set<string>();
+  const units = useMemo(
+    () => buildFamilyUnits(persons, spouses),
+    [persons, spouses]
+  );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) =>
@@ -143,12 +132,10 @@ export default function TreeListView({
 
   return (
     <div className="space-y-1">
-      {graph.roots.map((p) => (
+      {units.map((u) => (
         <UnitRows
-          key={p.id}
-          p={p}
-          graph={graph}
-          shown={shown}
+          key={u.main.id}
+          unit={u}
           cb={cb}
           collapsed={collapsed}
           toggle={toggle}

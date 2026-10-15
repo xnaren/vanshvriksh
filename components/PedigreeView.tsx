@@ -1,15 +1,14 @@
 // Top-down pedigree: each family unit (person + pair-able spouse) renders
 // as a couple block; children hang below joined by CSS pedigree lines.
+//
+// The unit plan is computed purely by buildFamilyUnits (no shared mutable
+// state during React rendering) so server and client always agree — see
+// tree-graph.ts for why this matters for hydration.
 "use client";
 
+import { useMemo } from "react";
 import type { Person } from "@/lib/types";
-import {
-  buildTreeGraph,
-  pairSpouse,
-  unpairedSpouse,
-  unitChildren,
-  type TreeGraph,
-} from "./tree-graph";
+import { buildFamilyUnits, type FamilyUnit } from "./tree-graph";
 import MemberCard, { displayName } from "./MemberCard";
 
 export interface ViewCallbacks {
@@ -20,26 +19,16 @@ export interface ViewCallbacks {
   onAdd: (p: Person) => void;
 }
 
-function FamilyNode({
-  p,
-  graph,
-  shown,
+function FamilyUnitView({
+  unit,
   isRoot,
   cb,
 }: {
-  p: Person;
-  graph: TreeGraph;
-  shown: Set<string>;
+  unit: FamilyUnit;
   isRoot: boolean;
   cb: ViewCallbacks;
 }) {
-  if (shown.has(p.id)) return null; // guard against cycles
-  shown.add(p.id);
-
-  const pairWith = pairSpouse(graph, p, shown);
-  const spouse = unpairedSpouse(graph, p, pairWith, shown);
-  const children = unitChildren(graph, p, pairWith);
-
+  const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
   return (
     <li
       className={isRoot ? "flex flex-col items-center shrink-0" : "vv-family"}
@@ -84,11 +73,9 @@ function FamilyNode({
       {children.length > 0 && (
         <ul className="vv-children">
           {children.map((c) => (
-            <FamilyNode
-              key={c.id}
-              p={c}
-              graph={graph}
-              shown={shown}
+            <FamilyUnitView
+              key={c.main.id}
+              unit={c}
               isRoot={false}
               cb={cb}
             />
@@ -108,19 +95,14 @@ export default function PedigreeView({
   spouses: import("@/lib/types").SpouseLink[];
   cb: ViewCallbacks;
 }) {
-  const graph = buildTreeGraph(persons, spouses);
-  const shown = new Set<string>();
+  const units = useMemo(
+    () => buildFamilyUnits(persons, spouses),
+    [persons, spouses]
+  );
   return (
     <>
-      {graph.roots.map((p) => (
-        <FamilyNode
-          key={p.id}
-          p={p}
-          graph={graph}
-          shown={shown}
-          isRoot={true}
-          cb={cb}
-        />
+      {units.map((u) => (
+        <FamilyUnitView key={u.main.id} unit={u} isRoot={true} cb={cb} />
       ))}
     </>
   );

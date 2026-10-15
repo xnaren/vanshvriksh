@@ -77,3 +77,53 @@ export function unpairedSpouse(
   if (!spouse || shown.has(spouse.id)) return undefined;
   return spouse;
 }
+
+/** One renderable family unit: a person, their paired spouse (couple
+ *  block), an unpaired-spouse annotation, and nested child units. */
+export interface FamilyUnit {
+  main: Person;
+  pair?: Person;
+  spouseNote?: Person;
+  children: FamilyUnit[];
+}
+
+/**
+ * Build the full unit plan in ONE pure pass.
+ *
+ * IMPORTANT: the `shown` set below is local to this function and never
+ * escapes into React rendering. An earlier version threaded a shared
+ * `shown` set through the components and mutated it during render
+ * (pairing decisions for later subtrees depended on it). In React 18's
+ * concurrent mode a render pass can be discarded and restarted, so
+ * components could close over different `shown` sets — the client then
+ * paired spouses differently than the server did, producing hydration
+ * mismatches ("did not expect server HTML to contain a <li> in <ul>").
+ * Computing the plan purely here makes every render self-consistent.
+ */
+export function buildFamilyUnits(
+  persons: Person[],
+  spouses: SpouseLink[]
+): FamilyUnit[] {
+  const graph = buildTreeGraph(persons, spouses);
+  const shown = new Set<string>();
+
+  function unitFor(p: Person): FamilyUnit | null {
+    if (shown.has(p.id)) return null; // guard against cycles
+    shown.add(p.id);
+    const pairWith = pairSpouse(graph, p, shown);
+    const spouseNote = unpairedSpouse(graph, p, pairWith, shown);
+    const children: FamilyUnit[] = [];
+    for (const c of unitChildren(graph, p, pairWith)) {
+      const u = unitFor(c);
+      if (u) children.push(u);
+    }
+    return { main: p, pair: pairWith, spouseNote, children };
+  }
+
+  const units: FamilyUnit[] = [];
+  for (const r of graph.roots) {
+    const u = unitFor(r);
+    if (u) units.push(u);
+  }
+  return units;
+}
