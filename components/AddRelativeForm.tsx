@@ -12,13 +12,24 @@ import { addRelative, addRootPerson, linkRelative } from "@/app/trees/[id]/actio
 export default function AddRelativeForm({
   treeId,
   persons,
+  initialRelativeToId,
+  onDone,
+  bare,
 }: {
   treeId: string;
   persons: Pick<Person, "id" | "given_name" | "family_name">[];
+  /** Pre-select "relative of" — used by the card quick-add modal. */
+  initialRelativeToId?: string;
+  /** Called shortly after a successful add — lets a modal close itself. */
+  onDone?: () => void;
+  /** Render without the outer card chrome (for embedding in a modal). */
+  bare?: boolean;
 }) {
   const isFirst = persons.length === 0;
   const [mode, setMode] = useState<"create" | "link">("create");
-  const [relativeToId, setRelativeToId] = useState(persons[0]?.id ?? "");
+  const [relativeToId, setRelativeToId] = useState(
+    initialRelativeToId ?? persons[0]?.id ?? ""
+  );
   const [relation, setRelation] = useState<Relation>("father");
   const [existingId, setExistingId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,6 +68,7 @@ export default function AddRelativeForm({
       (e.target as HTMLFormElement).reset();
       setExistingId("");
       setMsg(linkMode ? "Linked ✓" : "Added ✓");
+      if (onDone) setTimeout(onDone, 700);
     } catch (err) {
       setMsg(`Error: ${(err as Error).message}`);
     }
@@ -64,7 +76,11 @@ export default function AddRelativeForm({
   }
 
   return (
-    <form id="add-member-form" onSubmit={onSubmit} className="card space-y-3 scroll-mt-4">
+    <form
+      id={bare ? undefined : "add-member-form"}
+      onSubmit={onSubmit}
+      className={bare ? "space-y-3" : "card space-y-3 scroll-mt-4"}
+    >
       <h3 className="font-semibold">
         {isFirst ? "Add the first person" : "Add a relative"}
       </h3>

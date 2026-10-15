@@ -1,10 +1,9 @@
-// Tree settings: rename and delete. Rendered on the tree page for owners
-// only — the server actions enforce it too.
+// Tree settings: rename. Rendered on the tree page for owners only —
+// the server action enforces it too. (Delete lives in the top toolbar.)
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { updateTreeName, deleteTree } from "@/app/trees/[id]/actions";
+import { updateTreeName } from "@/app/trees/[id]/actions";
 
 export default function TreeSettings({
   treeId,
@@ -13,7 +12,6 @@ export default function TreeSettings({
   treeId: string;
   currentName: string;
 }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -28,28 +26,6 @@ export default function TreeSettings({
       setMsg(`Error: ${(err as Error).message}`);
     }
     setBusy(false);
-  }
-
-  async function onDelete() {
-    if (
-      !confirm(
-        `Delete the tree "${currentName}" and everyone in it? This can't be undone.`
-      )
-    )
-      return;
-    if (
-      !confirm("Really delete it? All members, links and invites go with it.")
-    )
-      return;
-    setBusy(true);
-    try {
-      await deleteTree(treeId);
-      router.push("/dashboard");
-      router.refresh();
-    } catch (err) {
-      setMsg(`Error: ${(err as Error).message}`);
-      setBusy(false);
-    }
   }
 
   return (
@@ -70,20 +46,6 @@ export default function TreeSettings({
           </button>
         </div>
       </form>
-      <div className="border-t border-stone-200 pt-3">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onDelete}
-          className="text-sm text-red-600 hover:underline"
-        >
-          Delete this tree…
-        </button>
-        <p className="text-xs text-stone-500 mt-1">
-          Removes the tree, all members, links and invites. Only the owner sees
-          this.
-        </p>
-      </div>
       {msg && <p className="text-sm">{msg}</p>}
     </div>
   );

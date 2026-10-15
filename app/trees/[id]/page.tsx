@@ -6,6 +6,7 @@ import AddRelativeForm from "@/components/AddRelativeForm";
 import TreeView from "@/components/TreeView";
 import InvitePanel from "@/components/InvitePanel";
 import TreeSettings from "@/components/TreeSettings";
+import TreeToolbar from "@/components/TreeToolbar";
 import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
 
 export default async function TreePage({
@@ -59,14 +60,14 @@ export default async function TreePage({
     <div className="py-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">🌳 {tree.name}</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-stone-500">
-            {personList.length} {personList.length === 1 ? "member" : "members"}
-          </span>
-          <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1">
-            your role: {role}
-          </span>
-        </div>
+        <TreeToolbar
+          treeId={treeId}
+          treeName={tree.name}
+          memberCount={personList.length}
+          role={role}
+          isOwner={role === "owner"}
+          roster={roster}
+        />
       </div>
 
       {/* Tree gets the full width — management panels move below it. */}
@@ -78,7 +79,7 @@ export default async function TreePage({
         canEdit={canEdit}
       />
 
-      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6">
+      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6">
         {canEdit && (
           <AddRelativeForm
             treeId={treeId}
@@ -93,18 +94,6 @@ export default async function TreePage({
         {role === "owner" && (
           <TreeSettings treeId={treeId} currentName={tree.name} />
         )}
-
-        <div className="card">
-          <h3 className="font-semibold mb-2">Members</h3>
-          <ul className="text-sm space-y-1">
-            {roster.map((m, i) => (
-              <li key={i} className="flex justify-between">
-                <span>{m.profiles?.username ?? "—"}</span>
-                <span className="text-stone-500">{m.role}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
       </div>
     </div>
   );

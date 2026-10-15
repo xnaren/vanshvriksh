@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Person, SpouseLink } from "@/lib/types";
 import { deletePerson } from "@/app/trees/[id]/actions";
 import EditPersonModal from "./EditPersonModal";
+import AddRelativeModal from "./AddRelativeModal";
 
 /* ---------- tiny inline icons (no emoji) ---------- */
 
@@ -126,16 +127,6 @@ function detailsLine(p: Person): string {
   return bits.join(" · ");
 }
 
-/** Tell the add-relative form to pre-select this person. */
-function quickAdd(p: Person) {
-  window.dispatchEvent(
-    new CustomEvent("vv-select-relative", { detail: { personId: p.id } })
-  );
-  document
-    .getElementById("add-member-form")
-    ?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
 /* ---------- person card ---------- */
 
 function PersonCard({
@@ -143,16 +134,18 @@ function PersonCard({
   canEdit,
   onEdit,
   onDelete,
+  onAdd,
 }: {
   p: Person;
   canEdit: boolean;
   onEdit: (p: Person) => void;
   onDelete: (p: Person) => void;
+  onAdd: (p: Person) => void;
 }) {
   const name = displayName(p);
   const details = detailsLine(p);
   return (
-    <div className="relative bg-white border border-stone-200 rounded-xl pl-2.5 pr-2 py-2 shadow-sm w-48 shrink-0">
+    <div className="vv-card relative bg-white border border-stone-200 rounded-xl pl-2.5 pr-2 py-2 shadow-sm w-48 shrink-0">
       <div className="flex items-center gap-2.5">
         {/* avatar: uploaded photo when set, initials otherwise */}
         {p.photo_url ? (
@@ -184,7 +177,7 @@ function PersonCard({
       </div>
       {canEdit && (
         <div className="absolute top-1 right-1 flex">
-          <IconButton title={`Add a relative of ${name}`} onClick={() => quickAdd(p)}>
+          <IconButton title={`Add a relative of ${name}`} onClick={() => onAdd(p)}>
             <PlusIcon title="Add relative" />
           </IconButton>
           <IconButton title={`Edit ${name}`} onClick={() => onEdit(p)}>
@@ -214,41 +207,119 @@ export default function TreeView({
 }) {
   const [editing, setEditing] = useState<Person | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [addingFor, setAddingFor] = useState<Person | null>(null);
 
-  /* ----- zoom ----- */
+  /* ----- zoom & pan ----- */
   const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
   const containerRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HTMLUListElement>(null);
+  const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(
+    null
+  );
+  const [panning, setPanning] = useState(false);
+
   const clampZoom = (z: number) =>
     Math.min(2.5, Math.max(0.3, Math.round(z * 100) / 100));
-  const zoomBy = (delta: number) => setZoom((z) => clampZoom(z + delta));
+
+  /** Set zoom; when (cx, cy) is given, keep the content under that point stable. */
+  function applyZoom(newZoom: number, cx?: number, cy?: number) {
+    const c = containerRef.current;
+    newZoom = clampZoom(newZoom);
+    if (!c || newZoom === zoomRef.current) return;
+    const oldZoom = zoomRef.current;
+    if (cx !== undefined && cy !== undefined) {
+      const rect = c.getBoundingClientRect();
+      const mx = cx - rect.left;
+      const my = cy - rect.top;
+      const contentX = (c.scrollLeft + mx) / oldZoom;
+      const contentY = (c.scrollTop + my) / oldZoom;
+      zoomRef.current = newZoom;
+      setZoom(newZoom);
+      requestAnimationFrame(() => {
+        c.scrollLeft = contentX * newZoom - mx;
+        c.scrollTop = contentY * newZoom - my;
+      });
+    } else {
+      zoomRef.current = newZoom;
+      setZoom(newZoom);
+    }
+  }
+
+  function zoomStep(delta: number) {
+    const c = containerRef.current;
+    if (!c) {
+      applyZoom(zoomRef.current + delta);
+      return;
+    }
+    const rect = c.getBoundingClientRect();
+    applyZoom(
+      zoomRef.current + delta,
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2
+    );
+  }
 
   function fitToView() {
     const c = containerRef.current;
     const t = treeRef.current;
     if (!c || !t) return;
     // CSS `zoom` scales layout, so divide back out to get the natural size.
-    const naturalW = t.offsetWidth / zoom;
-    const naturalH = t.offsetHeight / zoom;
+    const naturalW = t.offsetWidth / zoomRef.current;
+    const naturalH = t.offsetHeight / zoomRef.current;
     if (!naturalW || !naturalH) return;
-    setZoom(
-      clampZoom(Math.min(c.clientWidth / naturalW, c.clientHeight / naturalH, 1))
+    const rect = c.getBoundingClientRect();
+    applyZoom(
+      Math.min(c.clientWidth / naturalW, c.clientHeight / naturalH, 1),
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2
     );
   }
 
-  // Ctrl/Cmd + wheel zooms the canvas (page scroll otherwise).
+  // Mouse wheel zooms the canvas, centered on the cursor.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        setZoom((z) => clampZoom(z - Math.sign(e.deltaY) * 0.12));
-      }
+      e.preventDefault();
+      applyZoom(
+        zoomRef.current - Math.sign(e.deltaY) * 0.12,
+        e.clientX,
+        e.clientY
+      );
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  /** Drag the canvas background to pan. Drags starting on a card or
+   *  button are ignored so clicks keep working normally. */
+  function onPanStart(e: React.MouseEvent) {
+    if ((e.target as HTMLElement).closest("button, .vv-card")) return;
+    const c = containerRef.current;
+    if (!c) return;
+    panRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      sl: c.scrollLeft,
+      st: c.scrollTop,
+    };
+  }
+  function onPanMove(e: React.MouseEvent) {
+    const p = panRef.current;
+    const c = containerRef.current;
+    if (!p || !c) return;
+    const dx = e.clientX - p.x;
+    const dy = e.clientY - p.y;
+    if (!panning && Math.abs(dx) + Math.abs(dy) > 4) setPanning(true);
+    e.preventDefault();
+    c.scrollLeft = p.sl - dx;
+    c.scrollTop = p.st - dy;
+  }
+  function onPanEnd() {
+    panRef.current = null;
+    setPanning(false);
+  }
 
   async function handleDelete(p: Person) {
     if (
@@ -326,6 +397,7 @@ export default function TreeView({
               canEdit={canEdit}
               onEdit={setEditing}
               onDelete={handleDelete}
+              onAdd={setAddingFor}
             />
             {pairWith && (
               <>
@@ -342,6 +414,7 @@ export default function TreeView({
                   canEdit={canEdit}
                   onEdit={setEditing}
                   onDelete={handleDelete}
+                  onAdd={setAddingFor}
                 />
               </>
             )}
@@ -364,7 +437,12 @@ export default function TreeView({
   return (
     <div
       ref={containerRef}
-      className="vv-canvas card overflow-auto relative h-[70vh] min-h-[440px]"
+      className="vv-canvas card overflow-auto relative h-[70vh] min-h-[440px] flex"
+      style={{ cursor: panning ? "grabbing" : undefined }}
+      onMouseDown={onPanStart}
+      onMouseMove={onPanMove}
+      onMouseUp={onPanEnd}
+      onMouseLeave={onPanEnd}
     >
       {/* zoom toolbar */}
       <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white/95 border border-stone-200 rounded-full shadow-sm px-1.5 py-1">
@@ -372,7 +450,7 @@ export default function TreeView({
           type="button"
           title="Zoom out"
           aria-label="Zoom out"
-          onClick={() => zoomBy(-0.15)}
+          onClick={() => zoomStep(-0.15)}
           className="w-7 h-7 flex items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 text-lg leading-none"
         >
           −
@@ -381,7 +459,7 @@ export default function TreeView({
           type="button"
           title="Reset zoom to 100%"
           aria-label="Reset zoom"
-          onClick={() => setZoom(1)}
+          onClick={() => applyZoom(1)}
           className="min-w-[3rem] h-7 px-1 text-xs text-stone-600 hover:bg-stone-100 rounded-full tabular-nums"
         >
           {Math.round(zoom * 100)}%
@@ -390,7 +468,7 @@ export default function TreeView({
           type="button"
           title="Zoom in"
           aria-label="Zoom in"
-          onClick={() => zoomBy(0.15)}
+          onClick={() => zoomStep(0.15)}
           className="w-7 h-7 flex items-center justify-center rounded-full text-stone-600 hover:bg-stone-100 text-lg leading-none"
         >
           +
@@ -409,18 +487,30 @@ export default function TreeView({
       {deletingId && (
         <p className="text-xs text-stone-500 mb-2">Deleting…</p>
       )}
-      <ul
-        ref={treeRef}
-        style={{ zoom }}
-        className="vv-tree flex gap-14 items-start justify-start min-w-max px-2 py-2"
-      >
-        {roots.map((p) => renderFamily(p, true))}
-      </ul>
+      {/* m-auto centers the tree when it fits, and keeps it reachable
+          by scroll when it overflows (the "safe center" pattern). */}
+      <div className="m-auto p-3">
+        <ul
+          ref={treeRef}
+          style={{ zoom }}
+          className="vv-tree flex gap-14 items-start justify-center min-w-max"
+        >
+          {roots.map((p) => renderFamily(p, true))}
+        </ul>
+      </div>
       {editing && (
         <EditPersonModal
           treeId={treeId}
           person={editing}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {addingFor && (
+        <AddRelativeModal
+          treeId={treeId}
+          persons={persons}
+          relativeTo={addingFor}
+          onClose={() => setAddingFor(null)}
         />
       )}
     </div>
