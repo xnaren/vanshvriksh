@@ -24,11 +24,14 @@ export interface Person {
   tree_id: string;
   given_name: string;
   family_name: string | null;
+  nickname: string | null;
   gotra: string | null;
   gender: Gender | null;
   dob: string | null;
   dod: string | null;
+  birth_place: string | null;
   native_place: string | null;
+  current_location: string | null;
   photo_url: string | null;
   notes: string | null;
   is_living: boolean;

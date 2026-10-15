@@ -3,6 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser, getTreeRole } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Relation } from "@/lib/types";
 
 type Gender = "male" | "female" | "other" | null;
@@ -27,6 +28,22 @@ async function assertCanEdit(treeId: string) {
   return user;
 }
 
+/** Shared person detail fields pulled from a submitted form. */
+function personDetails(formData: FormData) {
+  return {
+    family_name: String(formData.get("family_name") ?? "").trim() || null,
+    nickname: String(formData.get("nickname") ?? "").trim() || null,
+    gotra: String(formData.get("gotra") ?? "").trim() || null,
+    gender: (String(formData.get("gender") ?? "") || null) as Gender,
+    dob: String(formData.get("dob") ?? "") || null,
+    birth_place: String(formData.get("birth_place") ?? "").trim() || null,
+    native_place: String(formData.get("native_place") ?? "").trim() || null,
+    current_location:
+      String(formData.get("current_location") ?? "").trim() || null,
+    notes: String(formData.get("notes") ?? "").trim() || null,
+  };
+}
+
 /** Add the very first person (a root) to an empty tree. */
 export async function addRootPerson(treeId: string, formData: FormData) {
   const { supabase, user } = await requireUser();
@@ -38,12 +55,7 @@ export async function addRootPerson(treeId: string, formData: FormData) {
   const { error } = await supabase.from("persons").insert({
     tree_id: treeId,
     given_name,
-    family_name: String(formData.get("family_name") ?? "").trim() || null,
-    gotra: String(formData.get("gotra") ?? "").trim() || null,
-    gender: (String(formData.get("gender") ?? "") || null) as Gender,
-    dob: String(formData.get("dob") ?? "") || null,
-    native_place: String(formData.get("native_place") ?? "").trim() || null,
-    notes: String(formData.get("notes") ?? "").trim() || null,
+    ...personDetails(formData),
     created_by: user.id,
   });
   if (error) throw new Error(error.message);
@@ -84,12 +96,8 @@ export async function addRelative(treeId: string, formData: FormData) {
     .insert({
       tree_id: treeId,
       given_name,
-      family_name: String(formData.get("family_name") ?? "").trim() || null,
-      gotra: String(formData.get("gotra") ?? "").trim() || null,
-      gender,
-      dob: String(formData.get("dob") ?? "") || null,
-      native_place: String(formData.get("native_place") ?? "").trim() || null,
-      notes: String(formData.get("notes") ?? "").trim() || null,
+      ...personDetails(formData),
+      gender, // relation-implied gender wins over the form default
       created_by: user.id,
     })
     .select("id")
@@ -229,7 +237,12 @@ export async function deleteTree(treeId: string) {
   revalidatePath("/dashboard");
 }
 
-/** Update a person's details (owners and editors). */
+/** Update a person's details (owners and editors). Also handles the member
+ *  photo: `photo` is an optional uploaded image (≤ 2 MB, jpeg/png/webp/gif),
+ *  stored in the `avatars` bucket under `<tree_id>/<person_id>.<ext>` with
+ *  upsert so each person keeps exactly one avatar; `remove_photo=on` deletes
+ *  it. Uploads run through the service-role admin client inside this action,
+ *  so members never need direct storage access. */
 export async function updatePerson(
   treeId: string,
   personId: string,
@@ -241,26 +254,77 @@ export async function updatePerson(
   const given_name = String(formData.get("given_name") ?? "").trim();
   if (!given_name) throw new Error("Name is required.");
 
+  const photo_url = await handleAvatar(treeId, personId, formData);
+
+  const update: Record<string, string | boolean | null> = {
+    given_name,
+    ...personDetails(formData),
+    dod: String(formData.get("dod") ?? "") || null,
+    is_living: formData.get("is_living") === "on",
+  };
+  // undefined = photo untouched; null = removed; string = new upload.
+  if (photo_url !== undefined) update.photo_url = photo_url;
+
   const { error } = await supabase
     .from("persons")
-    .update({
-      given_name,
-      family_name: String(formData.get("family_name") ?? "").trim() || null,
-      gotra: String(formData.get("gotra") ?? "").trim() || null,
-      gender: (String(formData.get("gender") ?? "") || null) as Gender,
-      dob: String(formData.get("dob") ?? "") || null,
-      dod: String(formData.get("dod") ?? "") || null,
-      native_place: String(formData.get("native_place") ?? "").trim() || null,
-      is_living: formData.get("is_living") === "on",
-      notes: String(formData.get("notes") ?? "").trim() || null,
-    })
+    .update(update)
     .eq("id", personId)
     .eq("tree_id", treeId);
   if (error) throw new Error(error.message);
   revalidatePath(`/trees/${treeId}`);
 }
 
-/** Delete a person (owners and editors). Children's parent links are set to
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const AVATAR_MIME_TO_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/** Returns the new photo_url, null if removed, or undefined if untouched. */
+async function handleAvatar(
+  treeId: string,
+  personId: string,
+  formData: FormData
+): Promise<string | null | undefined> {
+  const admin = createAdminClient();
+  const bucket = admin.storage.from("avatars");
+  const prefix = `${treeId}/${personId}`;
+
+  if (formData.get("remove_photo") === "on") {
+    // Best-effort cleanup of whatever file is stored for this person.
+    const { data: files } = await bucket.list(treeId, {
+      search: personId,
+      limit: 10,
+    });
+    const paths = (files ?? [])
+      .filter((f) => f.name.startsWith(`${personId}.`))
+      .map((f) => `${treeId}/${f.name}`);
+    if (paths.length > 0) await bucket.remove(paths);
+    return null;
+  }
+
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) return undefined;
+
+  const ext = AVATAR_MIME_TO_EXT[file.type];
+  if (!ext) throw new Error("Photo must be a JPEG, PNG, WebP or GIF.");
+  if (file.size > AVATAR_MAX_BYTES)
+    throw new Error("Photo must be 2 MB or smaller.");
+
+  const path = `${prefix}.${ext}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const { error } = await bucket.upload(path, bytes, {
+    contentType: file.type,
+    upsert: true,
+  });
+  if (error) throw new Error(`Photo upload failed: ${error.message}`);
+
+  return bucket.getPublicUrl(path).data.publicUrl;
+}
+
+/** Delete a person's details (owners and editors). Children's parent links are set to
  *  null and spouse links are removed by the database automatically. */
 export async function deletePerson(treeId: string, personId: string) {
   const { supabase } = await requireUser();
@@ -272,6 +336,22 @@ export async function deletePerson(treeId: string, personId: string) {
     .eq("id", personId)
     .eq("tree_id", treeId);
   if (error) throw new Error(error.message);
+
+  // Best-effort avatar cleanup; the person row is already gone, so a
+  // storage failure here must not block the delete.
+  try {
+    const bucket = createAdminClient().storage.from("avatars");
+    const { data: files } = await bucket.list(treeId, {
+      search: personId,
+      limit: 10,
+    });
+    const paths = (files ?? [])
+      .filter((f) => f.name.startsWith(`${personId}.`))
+      .map((f) => `${treeId}/${f.name}`);
+    if (paths.length > 0) await bucket.remove(paths);
+  } catch {
+    /* avatar cleanup is best-effort */
+  }
   revalidatePath(`/trees/${treeId}`);
 }
 

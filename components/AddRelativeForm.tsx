@@ -177,9 +177,16 @@ export default function AddRelativeForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-sm font-medium mb-1">Nickname</label>
+              <input name="nickname" placeholder="e.g. Chintu" />
+            </div>
+            <div>
               <label className="block text-sm font-medium mb-1">Gotra</label>
               <input name="gotra" placeholder="e.g. Kashyap" />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Gender</label>
               <select name="gender" defaultValue="">
@@ -189,14 +196,20 @@ export default function AddRelativeForm({
                 <option value="other">Other</option>
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">
                 Date of birth
               </label>
               <input name="dob" type="date" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Place of birth
+              </label>
+              <input name="birth_place" placeholder="e.g. Repalle" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
@@ -204,6 +217,13 @@ export default function AddRelativeForm({
               </label>
               <input name="native_place" placeholder="e.g. Varanasi" />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Current location
+            </label>
+            <input name="current_location" placeholder="e.g. Hyderabad" />
           </div>
 
           <div>

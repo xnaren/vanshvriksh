@@ -74,7 +74,6 @@ export default async function TreePage({
         />
       </div>
 
-      <h2 className="font-semibold mb-3">Family tree</h2>
       <TreeView
         persons={personList}
         spouses={spouseList}

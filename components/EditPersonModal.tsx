@@ -11,6 +11,12 @@ function fullName(p: Person) {
   return `${p.given_name}${p.family_name ? " " + p.family_name : ""}`;
 }
 
+function initials(p: Person) {
+  const a = p.given_name.trim().charAt(0);
+  const b = (p.family_name ?? "").trim().charAt(0);
+  return (a + b).toUpperCase() || "?";
+}
+
 export default function EditPersonModal({
   treeId,
   person,
@@ -64,6 +70,45 @@ export default function EditPersonModal({
         )}
 
         <form onSubmit={onSubmit} className="space-y-3">
+          <div className="flex items-center gap-4">
+            {person.photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={person.photo_url}
+                alt={fullName(person)}
+                className="w-16 h-16 rounded-full object-cover border border-stone-200"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-semibold text-lg">
+                {initials(person)}
+              </div>
+            )}
+            <div className="text-sm">
+              <label className="block font-medium mb-1">
+                Photo
+                <input
+                  type="file"
+                  name="photo"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="block mt-1 text-xs"
+                />
+              </label>
+              <p className="text-xs text-stone-500">
+                JPEG/PNG/WebP/GIF, up to 2&nbsp;MB.
+              </p>
+              {person.photo_url && (
+                <label className="flex items-center gap-1.5 text-xs mt-1">
+                  <input
+                    type="checkbox"
+                    name="remove_photo"
+                    className="w-3.5 h-3.5"
+                  />
+                  Remove current photo
+                </label>
+              )}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Given name *</label>
@@ -77,9 +122,16 @@ export default function EditPersonModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="block text-sm font-medium mb-1">Nickname</label>
+              <input name="nickname" defaultValue={person.nickname ?? ""} placeholder="e.g. Chintu" />
+            </div>
+            <div>
               <label className="block text-sm font-medium mb-1">Gotra</label>
               <input name="gotra" defaultValue={person.gotra ?? ""} />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Gender</label>
               <select name="gender" defaultValue={person.gender ?? ""}>
@@ -89,12 +141,16 @@ export default function EditPersonModal({
                 <option value="other">Other</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Date of birth</label>
+              <input name="dob" type="date" defaultValue={person.dob ?? ""} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Date of birth</label>
-              <input name="dob" type="date" defaultValue={person.dob ?? ""} />
+              <label className="block text-sm font-medium mb-1">Place of birth</label>
+              <input name="birth_place" defaultValue={person.birth_place ?? ""} />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Date of passing</label>
@@ -107,17 +163,22 @@ export default function EditPersonModal({
               <label className="block text-sm font-medium mb-1">Native place</label>
               <input name="native_place" defaultValue={person.native_place ?? ""} />
             </div>
-            <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  name="is_living"
-                  defaultChecked={person.is_living}
-                  className="w-4 h-4"
-                />
-                Living
-              </label>
+            <div>
+              <label className="block text-sm font-medium mb-1">Current location</label>
+              <input name="current_location" defaultValue={person.current_location ?? ""} placeholder="e.g. Hyderabad" />
             </div>
+          </div>
+
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="is_living"
+                defaultChecked={person.is_living}
+                className="w-4 h-4"
+              />
+              Living
+            </label>
           </div>
 
           <div>
