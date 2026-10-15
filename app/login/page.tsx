@@ -55,10 +55,10 @@ function LoginForm() {
 
   return (
     <div className="max-w-md mx-auto py-10">
-      <h1 className="text-2xl font-bold mb-1">Log in</h1>
+      <h1 className="text-2xl font-bold mb-1">Namaste 🙏</h1>
       <p className="text-stone-600 mb-6 text-sm">
-        No password — just your username, a quick bot check, and a code
-        emailed to you.
+        Log in to your family trees — no password, just your username, a
+        quick bot check, and a code emailed to you.
       </p>
 
       {error && (

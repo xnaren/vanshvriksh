@@ -5,6 +5,7 @@ import { getTreeRole } from "@/lib/auth";
 import AddRelativeForm from "@/components/AddRelativeForm";
 import TreeView from "@/components/TreeView";
 import InvitePanel from "@/components/InvitePanel";
+import TreeSettings from "@/components/TreeSettings";
 import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
 
 export default async function TreePage({
@@ -58,15 +59,25 @@ export default async function TreePage({
     <div className="py-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">🌳 {tree.name}</h1>
-        <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1">
-          your role: {role}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-stone-500">
+            {personList.length} {personList.length === 1 ? "member" : "members"}
+          </span>
+          <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1">
+            your role: {role}
+          </span>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <h2 className="font-semibold mb-3">Family tree</h2>
-          <TreeView persons={personList} spouses={spouseList} />
+          <TreeView
+            persons={personList}
+            spouses={spouseList}
+            treeId={treeId}
+            canEdit={canEdit}
+          />
         </div>
 
         <div className="space-y-6">
@@ -81,6 +92,9 @@ export default async function TreePage({
             />
           )}
           {canEdit && <InvitePanel treeId={treeId} />}
+          {role === "owner" && (
+            <TreeSettings treeId={treeId} currentName={tree.name} />
+          )}
 
           <div className="card">
             <h3 className="font-semibold mb-2">Members</h3>
