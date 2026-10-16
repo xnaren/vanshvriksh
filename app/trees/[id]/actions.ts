@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser, getTreeRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Relation } from "@/lib/types";
+import type { GedcomIndividual, GedcomFamily } from "@/lib/gedcom";
 
 type Gender = "male" | "female" | "other" | null;
 
@@ -528,4 +529,98 @@ export async function linkRelative(treeId: string, formData: FormData) {
 
   revalidatePath(`/trees/${treeId}`);
   return { ok: true };
+}
+
+/**
+ * Bulk-import people from a parsed GEDCOM file. Creates all individuals,
+ * then spouse links, then parent links. Adds new people only — nothing
+ * already in the tree is changed.
+ */
+export async function importGedcom(
+  treeId: string,
+  data: { individuals: GedcomIndividual[]; families: GedcomFamily[] }
+) {
+  const { supabase, user } = await requireUser();
+  await assertCanEdit(treeId);
+
+  const inds = data.individuals ?? [];
+  if (inds.length === 0) throw new Error("No people found in the file.");
+  if (inds.length > 2000)
+    throw new Error("Too many people in this file (limit 2000 per import).");
+
+  const { data: created, error } = await supabase
+    .from("persons")
+    .insert(
+      inds.map((i) => ({
+        tree_id: treeId,
+        given_name: (i.given_name || "Unknown").slice(0, 60),
+        family_name: i.family_name,
+        nickname: i.nickname,
+        gender: i.gender,
+        dob: i.dob,
+        birth_place: i.birth_place,
+        dod: i.dod,
+        is_living: i.is_living,
+        notes: i.notes,
+        gotra: i.gotra,
+        native_place: i.native_place,
+        current_location: i.current_location,
+        created_by: user.id,
+      }))
+    )
+    .select("id");
+  if (error) throw new Error(error.message);
+  const ids = (created ?? []).map((r: { id: string }) => r.id);
+  if (ids.length !== inds.length)
+    throw new Error("Import partially failed; please try again.");
+
+  // Spouse links (dedupe pairs).
+  const seen = new Set<string>();
+  const spouseRows: Array<{
+    tree_id: string;
+    person_a: string;
+    person_b: string;
+    married_on: string | null;
+  }> = [];
+  for (const f of data.families ?? []) {
+    if (f.husb == null || f.wife == null) continue;
+    const a = ids[f.husb];
+    const b = ids[f.wife];
+    if (!a || !b || a === b) continue;
+    const key = [a, b].sort().join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    spouseRows.push({
+      tree_id: treeId,
+      person_a: a,
+      person_b: b,
+      married_on: f.marrDate,
+    });
+  }
+  if (spouseRows.length > 0) {
+    const { error: se } = await supabase.from("spouses").insert(spouseRows);
+    if (se) throw new Error(se.message);
+  }
+
+  // Parent links.
+  for (const f of data.families ?? []) {
+    const father = f.husb != null ? ids[f.husb] : null;
+    const mother = f.wife != null ? ids[f.wife] : null;
+    if (!father && !mother) continue;
+    for (const ci of f.chil ?? []) {
+      const cid = ids[ci];
+      if (!cid || cid === father || cid === mother) continue;
+      const patch: Record<string, string> = {};
+      if (father) patch.father_id = father;
+      if (mother) patch.mother_id = mother;
+      const { error: ue } = await supabase
+        .from("persons")
+        .update(patch)
+        .eq("id", cid);
+      if (ue) throw new Error(ue.message);
+    }
+  }
+
+  revalidatePath(`/trees/${treeId}`);
+  return { persons: ids.length, families: (data.families ?? []).length };
 }

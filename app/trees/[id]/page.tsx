@@ -71,6 +71,8 @@ export default async function TreePage({
             family_name: p.family_name,
           }))}
           roster={roster}
+          fullPersons={personList}
+          spouses={spouseList}
         />
       </div>
 

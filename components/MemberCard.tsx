@@ -187,6 +187,16 @@ export default function MemberCard({
 }) {
   const name = displayName(p);
   const details = detailsLine(p);
+  // Gender coding: tinted avatar (or ring on photos) + a small glyph, so
+  // gender reads at a glance. Blue = male, rose = female, neutral = other.
+  const genderTone =
+    p.gender === "male"
+      ? { bg: "bg-sky-100 text-sky-800", ring: "ring-sky-300" }
+      : p.gender === "female"
+        ? { bg: "bg-rose-100 text-rose-800", ring: "ring-rose-300" }
+        : { bg: "bg-stone-100 text-stone-600", ring: "ring-stone-200" };
+  const genderGlyph =
+    p.gender === "male" ? "♂" : p.gender === "female" ? "♀" : null;
   const cardRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const rectRef = useRef<DOMRect | null>(null);
@@ -247,10 +257,12 @@ export default function MemberCard({
           <img
             src={p.photo_url}
             alt={name}
-            className="w-10 h-10 rounded-full object-cover shrink-0 border border-stone-200"
+            className={`w-10 h-10 rounded-full object-cover shrink-0 border border-stone-200 ring-2 ${genderTone.ring}`}
           />
         ) : (
-          <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-semibold text-sm shrink-0">
+          <div
+            className={`w-10 h-10 rounded-full ${genderTone.bg} flex items-center justify-center font-semibold text-sm shrink-0`}
+          >
             {initials(p)}
           </div>
         )}
@@ -262,6 +274,14 @@ export default function MemberCard({
             {name}
             {p.nickname && (
               <span className="font-normal text-stone-400"> · {p.nickname}</span>
+            )}
+            {genderGlyph && (
+              <span
+                className={`ml-1 text-xs ${p.gender === "male" ? "text-sky-500" : "text-rose-500"}`}
+                aria-label={p.gender ?? undefined}
+              >
+                {genderGlyph}
+              </span>
             )}
           </div>
           {details && (

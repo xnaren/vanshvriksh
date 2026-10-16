@@ -7,8 +7,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteTree } from "@/app/trees/[id]/actions";
-import type { Person, RosterEntry } from "@/lib/types";
+import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
+import { buildGedcom } from "@/lib/gedcom";
 import AddRelativeModal from "./AddRelativeModal";
+import GedcomImportModal from "./GedcomImportModal";
 import InvitePanel from "./InvitePanel";
 import TreeSettings from "./TreeSettings";
 
@@ -69,6 +71,26 @@ function TrashIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
 function ToolButton({
   title,
   onClick,
@@ -117,6 +139,8 @@ export default function TreeToolbar({
   isOwner,
   persons,
   roster,
+  fullPersons,
+  spouses,
 }: {
   treeId: string;
   treeName: string;
@@ -126,14 +150,35 @@ export default function TreeToolbar({
   isOwner: boolean;
   persons: Pick<Person, "id" | "given_name" | "family_name">[];
   roster: RosterEntry[];
+  fullPersons: Person[];
+  spouses: SpouseLink[];
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<Panel>(null);
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const toggle = (p: Exclude<Panel, null>) =>
     setPanel((cur) => (cur === p ? null : p));
+
+  function onExportGedcom() {
+    const ged = buildGedcom(fullPersons, spouses, treeName);
+    const blob = new Blob([ged], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const safe = treeName
+      .replace(/[^\w\- ]+/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 60);
+    a.download = `${safe || "family-tree"}.ged`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   async function onDeleteTree() {
     if (
@@ -210,6 +255,16 @@ export default function TreeToolbar({
         <SearchIcon />
       </ToolButton>
 
+      <ToolButton title="Export tree as GEDCOM (.ged)" onClick={onExportGedcom}>
+        <DownloadIcon />
+      </ToolButton>
+
+      {canEdit && (
+        <ToolButton title="Import GEDCOM (.ged) file" onClick={() => setImporting(true)}>
+          <UploadIcon />
+        </ToolButton>
+      )}
+
       {canEdit && (
         <div className="relative">
           <ToolButton
@@ -269,6 +324,10 @@ export default function TreeToolbar({
           persons={persons}
           onClose={() => setAdding(false)}
         />
+      )}
+
+      {importing && (
+        <GedcomImportModal treeId={treeId} onClose={() => setImporting(false)} />
       )}
     </div>
   );
