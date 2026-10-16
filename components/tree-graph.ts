@@ -48,36 +48,6 @@ export function buildTreeGraph(
   return { byId, childrenOf, partnerOf, hasParents, roots };
 }
 
-/** Pair up spouses only when both are roots — otherwise the spouse renders
- *  in their own birth family and the link is shown as an annotation. */
-export function pairSpouse(
-  graph: TreeGraph,
-  p: Person,
-  shown: Set<string>
-): Person | undefined {
-  const spouseId = graph.partnerOf.get(p.id);
-  const spouse =
-    spouseId && !shown.has(spouseId) ? graph.byId.get(spouseId) : undefined;
-  const pairWith =
-    spouse && !graph.hasParents.has(spouse.id) ? spouse : undefined;
-  if (pairWith) shown.add(pairWith.id);
-  return pairWith;
-}
-
-/** The spouse when they can't be paired (renders elsewhere). */
-export function unpairedSpouse(
-  graph: TreeGraph,
-  p: Person,
-  pairWith: Person | undefined,
-  shown: Set<string>
-): Person | undefined {
-  const spouseId = graph.partnerOf.get(p.id);
-  if (!spouseId || pairWith) return undefined;
-  const spouse = graph.byId.get(spouseId);
-  if (!spouse || shown.has(spouse.id)) return undefined;
-  return spouse;
-}
-
 /** One renderable family unit: a person, their paired spouse (couple
  *  block), an unpaired-spouse annotation, and nested child units. */
 export interface FamilyUnit {
@@ -89,6 +59,15 @@ export interface FamilyUnit {
 
 /**
  * Build the full unit plan in ONE pure pass.
+ *
+ * Pairing is decided globally before rendering (never during): the anchor
+ * partner hosts the couple unit and the other partner never renders alone.
+ * Who anchors: the partner who has parents in the tree — so a married
+ * couple draws together in the anchored partner's birth position (e.g. a
+ * wife joins her husband's line) instead of one spouse rendering solo with
+ * a "⚭ name" annotation. If both/neither have parents, whoever comes first
+ * anchors. This keeps married couples visually linked, which is the whole
+ * point of the tree.
  *
  * IMPORTANT: the `shown` set below is local to this function and never
  * escapes into React rendering. An earlier version threaded a shared
@@ -105,19 +84,47 @@ export function buildFamilyUnits(
   spouses: SpouseLink[]
 ): FamilyUnit[] {
   const graph = buildTreeGraph(persons, spouses);
-  const shown = new Set<string>();
 
+  // Directional pairing: anchorId -> partnerId.
+  const pairOf = new Map<string, string>();
+  const paired = new Set<string>();
+  for (const p of persons) {
+    if (paired.has(p.id)) continue;
+    const sId = graph.partnerOf.get(p.id);
+    if (!sId || paired.has(sId)) continue;
+    const s = graph.byId.get(sId);
+    if (!s) continue;
+    const pHasParents = graph.hasParents.has(p.id);
+    const sHasParents = graph.hasParents.has(s.id);
+    // The partner with parents anchors the couple; otherwise first one wins.
+    const anchor = sHasParents && !pHasParents ? s : p;
+    const other = anchor === p ? s : p;
+    pairOf.set(anchor.id, other.id);
+    paired.add(p.id);
+    paired.add(s.id);
+  }
+  const pairedOther = new Set(pairOf.values());
+
+  const shown = new Set<string>();
   function unitFor(p: Person): FamilyUnit | null {
-    if (shown.has(p.id)) return null; // guard against cycles
+    if (shown.has(p.id) || pairedOther.has(p.id)) return null; // cycles / paired-away
     shown.add(p.id);
-    const pairWith = pairSpouse(graph, p, shown);
-    const spouseNote = unpairedSpouse(graph, p, pairWith, shown);
+    const otherId = pairOf.get(p.id);
+    const pair = otherId ? graph.byId.get(otherId) : undefined;
+    if (pair) shown.add(pair.id);
+    // Unpaired-spouse annotation: linked spouse who ended up paired elsewhere.
+    let spouseNote: Person | undefined;
+    const sId = graph.partnerOf.get(p.id);
+    if (!pair && sId && !shown.has(sId)) {
+      const s = graph.byId.get(sId);
+      if (s) spouseNote = s;
+    }
     const children: FamilyUnit[] = [];
-    for (const c of unitChildren(graph, p, pairWith)) {
+    for (const c of unitChildren(graph, p, pair)) {
       const u = unitFor(c);
       if (u) children.push(u);
     }
-    return { main: p, pair: pairWith, spouseNote, children };
+    return { main: p, pair, spouseNote, children };
   }
 
   const units: FamilyUnit[] = [];
