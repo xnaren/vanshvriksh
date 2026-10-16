@@ -142,36 +142,73 @@ export async function addRelative(treeId: string, formData: FormData) {
 
     case "son":
     case "daughter": {
-      // Child of the target. The other parent is the target's spouse of the
-      // opposite gender, when one is recorded.
-      const { data: links } = await supabase
-        .from("spouses")
-        .select("person_a, person_b")
-        .eq("tree_id", treeId)
-        .or(`person_a.eq.${target.id},person_b.eq.${target.id}`);
+      // Child of the target, optionally with an explicitly chosen other
+      // parent (e.g. a child of a specific couple, or of another marriage).
+      // Without an explicit pick, the other parent is the target's spouse of
+      // the opposite gender, when one is recorded.
+      const explicitOtherId =
+        String(formData.get("otherParentId") ?? "") || null;
 
-      let otherParent: string | null = null;
-      for (const link of links ?? []) {
-        const otherId =
-          link.person_a === target.id ? link.person_b : link.person_a;
-        const { data: other } = await supabase
+      let otherId: string | null = null;
+      let otherGender: Gender = null;
+      if (explicitOtherId) {
+        if (explicitOtherId === target.id)
+          throw new Error("The other parent can't be the same person.");
+        const { data: other, error: otherError } = await supabase
           .from("persons")
           .select("id, gender")
-          .eq("id", otherId)
+          .eq("id", explicitOtherId)
+          .eq("tree_id", treeId)
           .single();
-        if (other && other.gender && other.gender !== target.gender) {
-          otherParent = other.id as string;
-          break;
+        if (otherError || !other)
+          throw new Error("Other parent not found in this tree.");
+        otherId = other.id as string;
+        otherGender = other.gender as Gender;
+      } else {
+        const { data: links } = await supabase
+          .from("spouses")
+          .select("person_a, person_b")
+          .eq("tree_id", treeId)
+          .or(`person_a.eq.${target.id},person_b.eq.${target.id}`);
+
+        for (const link of links ?? []) {
+          const otherLinkId =
+            link.person_a === target.id ? link.person_b : link.person_a;
+          const { data: other } = await supabase
+            .from("persons")
+            .select("id, gender")
+            .eq("id", otherLinkId)
+            .single();
+          if (other && other.gender && other.gender !== target.gender) {
+            otherId = other.id as string;
+            otherGender = other.gender as Gender;
+            break;
+          }
         }
       }
 
-      if (target.gender === "female") {
-        await setParent("mother_id", target.id as string);
-        await setParent("father_id", otherParent);
-      } else {
-        await setParent("father_id", target.id as string);
-        await setParent("mother_id", otherParent);
+      // Assign father/mother slots by gender; unknown genders take the free slot.
+      const targetCol =
+        target.gender === "female" ? "mother_id" : "father_id";
+      let otherCol: "father_id" | "mother_id" | null = null;
+      if (otherId) {
+        otherCol =
+          otherGender === "male"
+            ? "father_id"
+            : otherGender === "female"
+              ? "mother_id"
+              : targetCol === "father_id"
+                ? "mother_id"
+                : "father_id";
+        if (otherCol === targetCol) {
+          throw new Error(
+            "Both chosen parents would fill the same slot — pick parents of different genders, or leave the other parent empty."
+          );
+        }
       }
+
+      await setParent(targetCol, target.id as string);
+      if (otherId && otherCol) await setParent(otherCol, otherId);
       break;
     }
 
@@ -478,25 +515,19 @@ export async function linkRelative(treeId: string, formData: FormData) {
         throw new Error("That would create a loop — they're already related that way.");
       }
       const updates: Record<string, string> = {};
-      if (target.gender !== "female") {
-        if (existing.father_id && (existing.father_id as string) !== target.id) {
-          throw new Error("They already have a recorded father. Edit the person to change it.");
-        }
-        updates.father_id = target.id as string;
+      // Unknown gender fills the father slot, matching addRelative.
+      const col = target.gender === "female" ? "mother_id" : "father_id";
+      if (existing[col] && (existing[col] as string) !== target.id) {
+        throw new Error(
+          `They already have a recorded ${col === "father_id" ? "father" : "mother"}. Edit the person to change it.`
+        );
       }
-      if (target.gender !== "male") {
-        if (existing.mother_id && (existing.mother_id as string) !== target.id) {
-          throw new Error("They already have a recorded mother. Edit the person to change it.");
-        }
-        updates.mother_id = target.id as string;
-      }
-      if (Object.keys(updates).length > 0) {
-        const { error } = await supabase
-          .from("persons")
-          .update(updates)
-          .eq("id", existing.id);
-        if (error) throw new Error(error.message);
-      }
+      updates[col] = target.id as string;
+      const { error } = await supabase
+        .from("persons")
+        .update(updates)
+        .eq("id", existing.id);
+      if (error) throw new Error(error.message);
       break;
     }
 

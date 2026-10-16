@@ -32,6 +32,8 @@ export default function AddRelativeForm({
   );
   const [relation, setRelation] = useState<Relation>("father");
   const [existingId, setExistingId] = useState("");
+  const [givenName, setGivenName] = useState("");
+  const [otherParentId, setOtherParentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -67,6 +69,8 @@ export default function AddRelativeForm({
       }
       (e.target as HTMLFormElement).reset();
       setExistingId("");
+      setGivenName("");
+      setOtherParentId("");
       setMsg(linkMode ? "Linked ✓" : "Added ✓");
       if (onDone) setTimeout(onDone, 700);
     } catch (err) {
@@ -135,6 +139,61 @@ export default function AddRelativeForm({
               ))}
             </select>
           </div>
+          {/* Live preview so a wrong relation choice is obvious before submit. */}
+          <p className="text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Will add <b>{givenName.trim() || "a new person"}</b> as{" "}
+            <b>{RELATIONS.find((r) => r.value === relation)?.label}</b> of{" "}
+            <b>
+              {(() => {
+                const t = persons.find((p) => p.id === relativeToId);
+                return t
+                  ? `${t.given_name}${t.family_name ? " " + t.family_name : ""}`
+                  : "…";
+              })()}
+            </b>
+            {(relation === "son" || relation === "daughter") &&
+              otherParentId && (
+                <>
+                  {" "}with{" "}
+                  <b>
+                    {(() => {
+                      const t = persons.find((p) => p.id === otherParentId);
+                      return t
+                        ? `${t.given_name}${t.family_name ? " " + t.family_name : ""}`
+                        : "…";
+                    })()}
+                  </b>{" "}
+                  as the other parent
+                </>
+              )}
+            .
+          </p>
+          {!linkMode && (relation === "son" || relation === "daughter") && (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Other parent <span className="text-stone-400 font-normal">(optional)</span>
+              </label>
+              <select
+                name="otherParentId"
+                value={otherParentId}
+                onChange={(e) => setOtherParentId(e.target.value)}
+              >
+                <option value="">Auto — the other spouse, if recorded</option>
+                {persons
+                  .filter((p) => p.id !== relativeToId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.given_name}
+                      {p.family_name ? ` ${p.family_name}` : ""}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-stone-500 mt-1">
+                Pick this to add the child to a specific couple — e.g. a child
+                of Vikram <i>and</i> Priya, or a child from another marriage.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -167,7 +226,13 @@ export default function AddRelativeForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Given name *</label>
-              <input name="given_name" placeholder="e.g. Ramesh" required />
+              <input
+                name="given_name"
+                placeholder="e.g. Ramesh"
+                required
+                value={givenName}
+                onChange={(e) => setGivenName(e.target.value)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Family name</label>
