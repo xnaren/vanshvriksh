@@ -4,13 +4,15 @@
 // modals.
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Person, SpouseLink } from "@/lib/types";
 import { deletePerson } from "@/app/trees/[id]/actions";
 import EditPersonModal from "./EditPersonModal";
 import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
+import InLawArcs from "./InLawArcs";
+import { buildFamilyUnits } from "./tree-graph";
 import { displayName } from "./MemberCard";
 
 type View = "pedigree" | "list";
@@ -65,6 +67,13 @@ export default function TreeView({
     null
   );
   const [panning, setPanning] = useState(false);
+
+  // The pedigree unit plan, shared by the pedigree view and the in-law
+  // arc overlay (both pure derivations of persons/spouses).
+  const units = useMemo(
+    () => buildFamilyUnits(persons, spouses),
+    [persons, spouses]
+  );
 
   const clampZoom = (z: number) =>
     Math.min(2.5, Math.max(0.3, Math.round(z * 100) / 100));
@@ -278,6 +287,11 @@ export default function TreeView({
         <p className="text-xs text-stone-500 mb-2">Deleting…</p>
       )}
 
+      {/* In-law birth arcs: drawn under the tree, outside the zoomed layer. */}
+      {view === "pedigree" && (
+        <InLawArcs units={units} containerRef={containerRef} />
+      )}
+
       {view === "pedigree" ? (
         /* m-auto centers the tree when it fits, and keeps it reachable
            by scroll when it overflows (the "safe center" pattern). */
@@ -285,9 +299,9 @@ export default function TreeView({
           <ul
             ref={treeRef}
             style={{ zoom }}
-            className="vv-tree relative flex gap-14 items-start justify-center min-w-max"
+            className="vv-tree flex gap-14 items-start justify-center min-w-max"
           >
-            <PedigreeView persons={persons} spouses={spouses} cb={cb} />
+            <PedigreeView units={units} cb={cb} />
           </ul>
         </div>
       ) : (
