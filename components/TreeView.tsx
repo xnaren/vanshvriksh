@@ -285,7 +285,7 @@ export default function TreeView({
           <ul
             ref={treeRef}
             style={{ zoom }}
-            className="vv-tree flex gap-14 items-start justify-center min-w-max"
+            className="vv-tree relative flex gap-14 items-start justify-center min-w-max"
           >
             <PedigreeView persons={persons} spouses={spouses} cb={cb} />
           </ul>

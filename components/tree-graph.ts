@@ -158,3 +158,27 @@ export function buildFamilyUnits(
   }
   return units;
 }
+
+/** A birth link drawn as a connector arc: from the card of a paired-away
+ *  partner to the couple block of their parents' unit. Lets the pedigree
+ *  render as one connected tree instead of two separate ones. */
+export interface InLawArc {
+  /** Person whose card the arc starts from (the paired-away partner). */
+  fromId: string;
+  /** main.id of the parents' unit the arc lands on. */
+  toUnitKey: string;
+}
+
+/** Collect in-law arcs from a unit plan: every `ref` child becomes an arc
+ *  from that person's card to their birth parents' couple block. Pure. */
+export function collectInLawArcs(units: FamilyUnit[]): InLawArc[] {
+  const arcs: InLawArc[] = [];
+  const walk = (u: FamilyUnit) => {
+    for (const c of u.children) {
+      if (c.ref) arcs.push({ fromId: c.main.id, toUnitKey: u.main.id });
+      walk(c);
+    }
+  };
+  units.forEach(walk);
+  return arcs;
+}
