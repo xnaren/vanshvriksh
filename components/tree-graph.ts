@@ -49,12 +49,16 @@ export function buildTreeGraph(
 }
 
 /** One renderable family unit: a person, their paired spouse (couple
- *  block), an unpaired-spouse annotation, and nested child units. */
+ *  block), an unpaired-spouse annotation, and nested child units.
+ *  `ref` marks a leaf reference card: a paired-away partner shown in
+ *  their birth family (annotated with their spouse), while the full
+ *  couple renders at the anchor's position. */
 export interface FamilyUnit {
   main: Person;
   pair?: Person;
   spouseNote?: Person;
   children: FamilyUnit[];
+  ref?: boolean;
 }
 
 /**
@@ -105,8 +109,27 @@ export function buildFamilyUnits(
   }
   const pairedOther = new Set(pairOf.values());
 
+  // A paired-away partner who has parents in the tree also renders as a
+  // leaf reference card in their birth family (annotated with their
+  // spouse), so both families visibly show the link. Without this, linking
+  // e.g. a wife to her parents would silently drop her from their family
+  // view, since the couple is anchored at one side only.
+  const birthRef = new Set(
+    Array.from(pairedOther).filter((id) => graph.hasParents.has(id))
+  );
+
   const shown = new Set<string>();
-  function unitFor(p: Person): FamilyUnit | null {
+  const refShown = new Set<string>();
+  function unitFor(p: Person, asRef = false): FamilyUnit | null {
+    if (asRef) {
+      // Birth-family reference: exactly once, a leaf, never nests children.
+      // Uses its own set so render order can't suppress it.
+      if (refShown.has(p.id)) return null;
+      refShown.add(p.id);
+      const sId = graph.partnerOf.get(p.id);
+      const spouseNote = sId ? graph.byId.get(sId) : undefined;
+      return { main: p, spouseNote, children: [], ref: true };
+    }
     if (shown.has(p.id) || pairedOther.has(p.id)) return null; // cycles / paired-away
     shown.add(p.id);
     const otherId = pairOf.get(p.id);
@@ -121,7 +144,7 @@ export function buildFamilyUnits(
     }
     const children: FamilyUnit[] = [];
     for (const c of unitChildren(graph, p, pair)) {
-      const u = unitFor(c);
+      const u = birthRef.has(c.id) ? unitFor(c, true) : unitFor(c);
       if (u) children.push(u);
     }
     return { main: p, pair, spouseNote, children };
@@ -129,6 +152,7 @@ export function buildFamilyUnits(
 
   const units: FamilyUnit[] = [];
   for (const r of graph.roots) {
+    if (pairedOther.has(r.id)) continue; // rendered via anchor or birth family
     const u = unitFor(r);
     if (u) units.push(u);
   }
