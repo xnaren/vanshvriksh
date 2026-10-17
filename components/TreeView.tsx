@@ -67,10 +67,11 @@ export default function TreeView({
   );
   const [panning, setPanning] = useState(false);
 
-  // The pedigree unit plan, shared by the pedigree view and the in-law
-  // arc overlay (both pure derivations of persons/spouses).
+  // The pedigree unit plan, shared by the pedigree view (pure derivation
+  // of persons/spouses). In-law parents dock above the couple here; the
+  // outline view builds its own undocked plan.
   const units = useMemo(
-    () => buildFamilyUnits(persons, spouses),
+    () => buildFamilyUnits(persons, spouses, { dockInLaws: true }),
     [persons, spouses]
   );
 

@@ -6,9 +6,12 @@
 // tree-graph.ts for why this matters for hydration.
 //
 // A paired-away partner whose parents are also in the tree (e.g. a wife
-// shown with her husband's family) gets a small "d/o · s/o" caption under
-// her card; clicking it jumps the canvas to her birth family. No connector
-// geometry to maintain, and it scales to any number of such links.
+// shown with her husband's family) gets her parents' unit docked directly
+// above the couple, right-aligned over her card — so both spouses show
+// their own parents in one connected tree, no connector geometry needed.
+// When docking is ambiguous (several children married out), a small
+// "d/o · s/o" caption under the card jumps the canvas to the birth family
+// instead.
 "use client";
 
 import { useMemo } from "react";
@@ -57,20 +60,19 @@ function BirthCaption({
   );
 }
 
-function FamilyUnitView({
+function FamilyUnitBody({
   unit,
-  isRoot,
   cb,
   captions,
 }: {
   unit: FamilyUnit;
-  isRoot: boolean;
   cb: ViewCallbacks;
   captions: Map<string, CaptionInfo>;
 }) {
   const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
   // `ref` children (paired-away partners with parents in the tree) are not
-  // rendered as cards here — the d/o·s/o caption links them instead.
+  // rendered as cards here — the d/o·s/o caption links them instead, unless
+  // their parents' unit is docked above (see below).
   const visibleChildren = children.filter((c) => !c.ref);
   // Reserve the caption row when either card in the couple has one, so the
   // marriage node stays vertically centered on the cards.
@@ -98,13 +100,24 @@ function FamilyUnitView({
     </div>
   );
   return (
-    <li
-      className={
-        isRoot
-          ? "relative flex flex-col items-center shrink-0"
-          : "vv-family"
-      }
-    >
+    <>
+      {/* Docked in-law parents: the pair's parents' unit, right-aligned over
+          the pair's card, with a short connector down to the couple. */}
+      {unit.inLaw && (
+        <div className="w-full flex justify-end mb-1">
+          <div className="flex flex-col items-center">
+            <FamilyUnitBody
+              unit={unit.inLaw}
+              cb={cb}
+              captions={captions}
+            />
+            <div
+              className="w-0 border-l-2 border-stone-300 h-6"
+              aria-hidden
+            />
+          </div>
+        </div>
+      )}
       <div className="flex flex-col items-center" data-unit-key={p.id}>
         <div className="flex items-center">
           {card(p)}
@@ -141,6 +154,30 @@ function FamilyUnitView({
           ))}
         </ul>
       )}
+    </>
+  );
+}
+
+function FamilyUnitView({
+  unit,
+  isRoot,
+  cb,
+  captions,
+}: {
+  unit: FamilyUnit;
+  isRoot: boolean;
+  cb: ViewCallbacks;
+  captions: Map<string, CaptionInfo>;
+}) {
+  return (
+    <li
+      className={
+        isRoot
+          ? "relative flex flex-col items-center shrink-0"
+          : "vv-family"
+      }
+    >
+      <FamilyUnitBody unit={unit} cb={cb} captions={captions} />
     </li>
   );
 }
