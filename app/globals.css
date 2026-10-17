@@ -100,3 +100,13 @@ button[type="submit"], .btn-primary {
   border-right: 2px solid #a7d7c5;
   border-radius: 0 8px 0 0;
 }
+
+/* birth-family jump target pulse */
+@keyframes vv-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249, 168, 212, 0); }
+  25%, 65% { box-shadow: 0 0 0 3px rgba(249, 168, 212, 0.9); }
+}
+.vv-flash {
+  animation: vv-flash 2.2s ease;
+  border-radius: 0.75rem;
+}

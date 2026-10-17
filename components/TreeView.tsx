@@ -11,7 +11,6 @@ import EditPersonModal from "./EditPersonModal";
 import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
-import InLawArcs from "./InLawArcs";
 import { buildFamilyUnits } from "./tree-graph";
 import { displayName } from "./MemberCard";
 
@@ -182,6 +181,27 @@ export default function TreeView({
 
   /* ----- member actions ----- */
 
+  /** Jump the canvas to a family unit (birth-family caption) with a pulse. */
+  function jumpToUnit(unitKey: string) {
+    const c = containerRef.current;
+    const el = c?.querySelector(
+      `[data-unit-key="${CSS.escape(unitKey)}"]`
+    ) as HTMLElement | null;
+    if (!c || !el) return;
+    // Screen-pixel math — zoom-independent.
+    const cRect = c.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    c.scrollTo({
+      left:
+        c.scrollLeft + (r.left - cRect.left) - c.clientWidth / 2 + r.width / 2,
+      top:
+        c.scrollTop + (r.top - cRect.top) - c.clientHeight / 2 + r.height / 2,
+      behavior: "smooth",
+    });
+    el.classList.add("vv-flash");
+    window.setTimeout(() => el.classList.remove("vv-flash"), 2300);
+  }
+
   async function handleDelete(p: Person) {
     if (
       !confirm(
@@ -212,6 +232,7 @@ export default function TreeView({
     onEdit: setEditing,
     onDelete: handleDelete,
     onAdd: setAddingFor,
+    onJumpBirthFamily: jumpToUnit,
   };
 
   const viewButton = (v: View, title: string, glyph: React.ReactNode) => (
@@ -285,11 +306,6 @@ export default function TreeView({
 
       {deletingId && (
         <p className="text-xs text-stone-500 mb-2">Deleting…</p>
-      )}
-
-      {/* In-law birth arcs: drawn under the tree, outside the zoomed layer. */}
-      {view === "pedigree" && (
-        <InLawArcs units={units} containerRef={containerRef} />
       )}
 
       {view === "pedigree" ? (

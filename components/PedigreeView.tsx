@@ -5,14 +5,15 @@
 // state during React rendering) so server and client always agree — see
 // tree-graph.ts for why this matters for hydration.
 //
-// Birth links for paired-away partners are drawn by the InLawArcs overlay
-// (rendered by TreeView, outside the zoomed layer); here `ref` children are
-// simply not rendered as cards, and cards/units carry data attributes so
-// the overlay can find them.
+// A paired-away partner whose parents are also in the tree (e.g. a wife
+// shown with her husband's family) gets a small "d/o · s/o" caption under
+// her card; clicking it jumps the canvas to her birth family. No connector
+// geometry to maintain, and it scales to any number of such links.
 "use client";
 
+import { useMemo } from "react";
 import type { Person } from "@/lib/types";
-import type { FamilyUnit } from "./tree-graph";
+import { inLawCaptions, type FamilyUnit } from "./tree-graph";
 import MemberCard, { displayName } from "./MemberCard";
 
 export interface ViewCallbacks {
@@ -21,21 +22,81 @@ export interface ViewCallbacks {
   onEdit: (p: Person) => void;
   onDelete: (p: Person) => void;
   onAdd: (p: Person) => void;
+  onJumpBirthFamily: (unitKey: string) => void;
+}
+
+type CaptionInfo = { unitKey: string; label: string };
+
+/** "d/o X & Y" — jumps the canvas to the person's birth family. */
+function BirthCaption({
+  person,
+  captions,
+  onJump,
+}: {
+  person: Person;
+  captions: Map<string, CaptionInfo>;
+  onJump: (unitKey: string) => void;
+}) {
+  const info = captions.get(person.id);
+  if (!info) return null;
+  const kin =
+    person.gender === "female"
+      ? "d/o"
+      : person.gender === "male"
+        ? "s/o"
+        : "child of";
+  return (
+    <button
+      type="button"
+      onClick={() => onJump(info.unitKey)}
+      title="Jump to birth family"
+      className="mt-1 text-[11px] leading-tight text-stone-500 hover:text-emerald-700 underline decoration-dotted underline-offset-2"
+    >
+      {kin} {info.label}
+    </button>
+  );
 }
 
 function FamilyUnitView({
   unit,
   isRoot,
   cb,
+  captions,
 }: {
   unit: FamilyUnit;
   isRoot: boolean;
   cb: ViewCallbacks;
+  captions: Map<string, CaptionInfo>;
 }) {
   const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
   // `ref` children (paired-away partners with parents in the tree) are not
-  // rendered as cards here — an in-law arc connects them instead.
+  // rendered as cards here — the d/o·s/o caption links them instead.
   const visibleChildren = children.filter((c) => !c.ref);
+  // Reserve the caption row when either card in the couple has one, so the
+  // marriage node stays vertically centered on the cards.
+  const reserveCaptionRow =
+    captions.has(p.id) || (pairWith ? captions.has(pairWith.id) : false);
+  const card = (person: Person) => (
+    <div className="flex flex-col items-center">
+      <MemberCard
+        p={person}
+        canEdit={cb.canEdit}
+        zoom={cb.zoom}
+        onEdit={cb.onEdit}
+        onDelete={cb.onDelete}
+        onAdd={cb.onAdd}
+      />
+      {reserveCaptionRow && (
+        <div className="mt-1 text-[11px] leading-tight min-h-[15px]">
+          <BirthCaption
+            person={person}
+            captions={captions}
+            onJump={cb.onJumpBirthFamily}
+          />
+        </div>
+      )}
+    </div>
+  );
   return (
     <li
       className={
@@ -46,16 +107,7 @@ function FamilyUnitView({
     >
       <div className="flex flex-col items-center" data-unit-key={p.id}>
         <div className="flex items-center">
-          <div data-card-for={p.id}>
-            <MemberCard
-              p={p}
-              canEdit={cb.canEdit}
-              zoom={cb.zoom}
-              onEdit={cb.onEdit}
-              onDelete={cb.onDelete}
-              onAdd={cb.onAdd}
-            />
-          </div>
+          {card(p)}
           {pairWith && (
             <>
               {/* marriage node */}
@@ -66,16 +118,7 @@ function FamilyUnitView({
                   </span>
                 </div>
               </div>
-              <div data-card-for={pairWith.id}>
-                <MemberCard
-                  p={pairWith}
-                  canEdit={cb.canEdit}
-                  zoom={cb.zoom}
-                  onEdit={cb.onEdit}
-                  onDelete={cb.onDelete}
-                  onAdd={cb.onAdd}
-                />
-              </div>
+              {card(pairWith)}
             </>
           )}
         </div>
@@ -93,6 +136,7 @@ function FamilyUnitView({
               unit={c}
               isRoot={false}
               cb={cb}
+              captions={captions}
             />
           ))}
         </ul>
@@ -108,10 +152,17 @@ export default function PedigreeView({
   units: FamilyUnit[];
   cb: ViewCallbacks;
 }) {
+  const captions = useMemo(() => inLawCaptions(units), [units]);
   return (
     <>
       {units.map((u) => (
-        <FamilyUnitView key={u.main.id} unit={u} isRoot={true} cb={cb} />
+        <FamilyUnitView
+          key={u.main.id}
+          unit={u}
+          isRoot={true}
+          cb={cb}
+          captions={captions}
+        />
       ))}
     </>
   );
