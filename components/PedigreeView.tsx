@@ -13,6 +13,11 @@
 // color; children with no coupled sibling (e.g. the central couple's
 // own kids) are teal/shared. A fork's stem and bar take the drops'
 // color when they agree, else teal.
+//
+// Line STYLE separates generation bands: bands touching the current
+// (focal) generation are solid; each band further out — grandparents,
+// grandchildren, and beyond — steps dashed, then dotted, then the
+// cycle repeats, so overlapping lines stay traceable in a big tree.
 "use client";
 
 import { useMemo } from "react";
@@ -70,7 +75,15 @@ export default function PedigreeView({
         aria-hidden
       >
         {layout.forks.map((f) => (
-          <g key={f.parentKey} strokeWidth={2} fill="none">
+          <g
+            key={f.parentKey}
+            strokeWidth={2}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={
+              f.style === "dash" ? "7 5" : f.style === "dot" ? "0.5 5" : undefined
+            }
+          >
             <g stroke={SIDE_COLOR[f.side]}>
               <line x1={f.stemX} y1={f.stemTop} x2={f.stemX} y2={f.barY} />
               <line x1={f.barX0} y1={f.barY} x2={f.barX1} y2={f.barY} />

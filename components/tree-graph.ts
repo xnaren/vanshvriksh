@@ -201,11 +201,17 @@ export interface PlacedUnit {
   gen: number;
 }
 
+export type LineStyle = "solid" | "dash" | "dot";
+
 export interface ForkLine {
   parentKey: string;
   /** Color of the stem + bar: the drops' color when they agree, else
    *  "shared". Each drop carries its own side color. */
   side: LineSide;
+  /** Stroke pattern by generation band, cycling solid -> dash -> dot
+   *  with distance from the focal (current) generation, so overlapping
+   *  lines from different generations stay distinguishable. */
+  style: LineStyle;
   stemX: number;
   stemTop: number;
   barY: number;
@@ -470,8 +476,8 @@ export function layoutSingleTree(
     return u.main;
   };
 
-  const findFocal = (): { husband: Person; wife: Person } | null => {
-    let best: { husband: Person; wife: Person } | null = null;
+  const findFocal = (): { husband: Person; wife: Person; gen: number } | null => {
+    let best: { husband: Person; wife: Person; gen: number } | null = null;
     let bestGen = -1;
     unitOf.forEach((u, key) => {
       if (!u.pair) return;
@@ -481,12 +487,23 @@ export function layoutSingleTree(
       if (g > bestGen) {
         bestGen = g;
         const husband = husbandOf(key);
-        best = { husband, wife: husband === u.main ? u.pair : u.main };
+        best = { husband, wife: husband === u.main ? u.pair : u.main, gen: g };
       }
     });
     return best;
   };
   const focal = findFocal();
+
+  // Anchor generation for line styles: the focal (current) couple's
+  // generation; without a focal couple, the deepest couple's.
+  let anchorGen = 0;
+  if (focal) {
+    anchorGen = focal.gen;
+  } else {
+    unitOf.forEach((u, key) => {
+      if (u.pair) anchorGen = Math.max(anchorGen, genOf.get(key) ?? 0);
+    });
+  }
   const husbandSide = new Set<string>();
   const wifeSide = new Set<string>();
   if (focal) {
@@ -555,9 +572,19 @@ export function layoutSingleTree(
       drops.length > 0 && drops.every((dr) => dr.side === drops[0].side)
         ? drops[0].side
         : "shared";
+    // Generation band style: bands touching the current generation are
+    // solid; each band further out (up or down) steps dash, dot, then
+    // the cycle repeats.
+    const childGen = g + 1;
+    const dist =
+      childGen <= anchorGen
+        ? anchorGen - childGen
+        : childGen - anchorGen - 1;
+    const style: LineStyle = (["solid", "dash", "dot"] as const)[dist % 3];
     forks.push({
       parentKey: pu,
       side: forkSide,
+      style,
       stemX,
       stemTop: g * ROW_H + CARD_H,
       barY: bandTop + 12, // lane adjusted below
