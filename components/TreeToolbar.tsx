@@ -1,18 +1,41 @@
-// Top-right tree control strip: add-member, tree-members popover, member
-// search (placeholder), invite popover, settings popover, owner-only
-// delete-tree icon — plus the role pill. The member count lives on the
-// "+" tooltip to keep the bar minimal.
+// Tree control cluster, rendered into the app header's slot (next to
+// the VanshVriksh brand) as an emerald pill: tree name, role, add-member,
+// tree-members popover, name search, GEDCOM export/import, invite
+// popover, settings popover, owner-only delete-tree icon.
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { deleteTree } from "@/app/trees/[id]/actions";
 import type { Person, RosterEntry, SpouseLink } from "@/lib/types";
 import { buildGedcom } from "@/lib/gedcom";
+import { searchPersons } from "@/lib/person-search";
+import { displayName } from "./MemberCard";
 import AddRelativeModal from "./AddRelativeModal";
 import GedcomImportModal from "./GedcomImportModal";
 import InvitePanel from "./InvitePanel";
 import TreeSettings from "./TreeSettings";
+
+/** Renders children into the header's #vv-header-slot (see app/layout)
+ *  once mounted. Nothing renders in place. */
+function HeaderPortal({ children }: { children: React.ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setTarget(document.getElementById("vv-header-slot"));
+  }, []);
+  if (!target) return null;
+  return createPortal(children, target);
+}
+
+/** Small context line under a search result's name. */
+function personContext(p: Person): string {
+  const parts: string[] = [];
+  if (p.nickname) parts.push(`“${p.nickname}”`);
+  if (p.dob) parts.push(`b. ${p.dob.slice(0, 4)}`);
+  if (p.current_location) parts.push(p.current_location);
+  return parts.join(" · ");
+}
 
 function PlusIcon() {
   return (
@@ -158,9 +181,27 @@ export default function TreeToolbar({
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
 
-  const toggle = (p: Exclude<Panel, null>) =>
+  const results = useMemo(
+    () => searchPersons(fullPersons, query),
+    [fullPersons, query]
+  );
+
+  const toggle = (p: Exclude<Panel, null>) => {
+    setSearchOpen(false);
     setPanel((cur) => (cur === p ? null : p));
+  };
+
+  /** Ask the canvas (TreeView) to center this person's card. */
+  function pickPerson(id: string) {
+    window.dispatchEvent(
+      new CustomEvent("vv:focus-person", { detail: { personId: id } })
+    );
+    setSearchOpen(false);
+    setQuery("");
+  }
 
   function onExportGedcom() {
     const ged = buildGedcom(fullPersons, spouses, treeName);
@@ -205,10 +246,17 @@ export default function TreeToolbar({
   const countLabel = `${memberCount} ${memberCount === 1 ? "member" : "members"}`;
 
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-1 mr-1">
-        your role: {role}
-      </span>
+    <HeaderPortal>
+      <div className="flex items-center gap-1.5 bg-emerald-800 rounded-full pl-4 pr-1.5 py-1.5 shadow max-w-full">
+        <span className="text-sm font-semibold text-white truncate max-w-[14rem]">
+          🌳 {treeName}
+        </span>
+        <span className="hidden md:inline text-xs text-emerald-200 whitespace-nowrap">
+          {countLabel}
+        </span>
+        <span className="text-xs text-emerald-100 bg-emerald-700/70 rounded-full px-2 py-1 mr-0.5 whitespace-nowrap">
+          {role}
+        </span>
 
       {canEdit && (
         <ToolButton
@@ -251,9 +299,66 @@ export default function TreeToolbar({
         )}
       </div>
 
-      <ToolButton title="Search members — coming soon" disabled>
-        <SearchIcon />
-      </ToolButton>
+      <div className="relative">
+        <ToolButton
+          title="Search members by name"
+          active={searchOpen}
+          onClick={() => {
+            setPanel(null);
+            setSearchOpen((o) => !o);
+          }}
+        >
+          <SearchIcon />
+        </ToolButton>
+        {searchOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setSearchOpen(false)}
+            />
+            <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white border border-stone-200 rounded-lg shadow-lg p-2">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && results[0]) pickPerson(results[0].id);
+                  if (e.key === "Escape") setSearchOpen(false);
+                }}
+                placeholder="Search by name or nickname…"
+                className="text-sm"
+              />
+              {query.trim() !== "" &&
+                (results.length === 0 ? (
+                  <p className="text-xs text-stone-500 px-1 py-2">
+                    No members match “{query.trim()}”.
+                  </p>
+                ) : (
+                  <ul className="mt-1 max-h-64 overflow-y-auto">
+                    {results.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onClick={() => pickPerson(p.id)}
+                          className="w-full text-left px-2 py-1.5 rounded hover:bg-emerald-50"
+                        >
+                          <span className="block text-sm font-medium text-stone-800">
+                            {displayName(p)}
+                          </span>
+                          {personContext(p) && (
+                            <span className="block text-xs text-stone-500 truncate">
+                              {personContext(p)}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <ToolButton title="Export tree as GEDCOM (.ged)" onClick={onExportGedcom}>
         <DownloadIcon />
@@ -329,6 +434,7 @@ export default function TreeToolbar({
       {importing && (
         <GedcomImportModal treeId={treeId} onClose={() => setImporting(false)} />
       )}
-    </div>
+      </div>
+    </HeaderPortal>
   );
 }

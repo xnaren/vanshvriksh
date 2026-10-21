@@ -32,7 +32,7 @@ export default async function InvitePage({
   }
 
   return (
-    <div className="max-w-md mx-auto py-16">
+    <div className="max-w-md mx-auto px-4 py-16">
       <div className="card text-center space-y-4">
         <div className="text-5xl">🌳</div>
         {!info.valid ? (

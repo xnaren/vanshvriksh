@@ -246,6 +246,7 @@ export default function MemberCard({
   return (
     <div
       ref={cardRef}
+      data-person-id={p.id}
       className="vv-card group relative bg-white border border-stone-200 rounded-xl pl-2.5 pr-2 py-2 shadow-sm w-48 shrink-0"
       onMouseEnter={onEnter}
       onMouseLeave={hideTip}

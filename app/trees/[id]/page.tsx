@@ -1,5 +1,6 @@
-// Tree detail page: full-width pedigree canvas with a control-strip
-// toolbar; add/invite/settings live behind toolbar icons.
+// Tree detail page: full-bleed pedigree canvas. The tree name and its
+// icon controls (TreeToolbar) render into the app header's slot, so
+// this page is just the canvas.
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getTreeRole } from "@/lib/auth";
@@ -55,26 +56,23 @@ export default async function TreePage({
   const spouseList = (spouses ?? []) as SpouseLink[];
 
   return (
-    <div className="py-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">🌳 {tree.name}</h1>
-        <TreeToolbar
-          treeId={treeId}
-          treeName={tree.name}
-          memberCount={personList.length}
-          role={role}
-          canEdit={canEdit}
-          isOwner={role === "owner"}
-          persons={personList.map((p) => ({
-            id: p.id,
-            given_name: p.given_name,
-            family_name: p.family_name,
-          }))}
-          roster={roster}
-          fullPersons={personList}
-          spouses={spouseList}
-        />
-      </div>
+    <div className="px-3 pt-3 pb-2">
+      <TreeToolbar
+        treeId={treeId}
+        treeName={tree.name}
+        memberCount={personList.length}
+        role={role}
+        canEdit={canEdit}
+        isOwner={role === "owner"}
+        persons={personList.map((p) => ({
+          id: p.id,
+          given_name: p.given_name,
+          family_name: p.family_name,
+        }))}
+        roster={roster}
+        fullPersons={personList}
+        spouses={spouseList}
+      />
 
       <TreeView
         persons={personList}

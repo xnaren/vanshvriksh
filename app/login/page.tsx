@@ -54,7 +54,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="max-w-md mx-auto py-10">
+    <div className="max-w-md mx-auto px-4 py-10">
       <h1 className="text-2xl font-bold mb-1">Namaste 🙏</h1>
       <p className="text-stone-600 mb-6 text-sm">
         Log in to your family trees — no password, just your username, a
@@ -142,7 +142,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="max-w-md mx-auto py-10">Loading…</div>}>
+    <Suspense fallback={<div className="max-w-md mx-auto px-4 py-10">Loading…</div>}>
       <LoginForm />
     </Suspense>
   );

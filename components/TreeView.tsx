@@ -12,6 +12,7 @@ import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
 import { displayName } from "./MemberCard";
+import { layoutSingleTree } from "./tree-graph";
 
 type View = "pedigree" | "list";
 
@@ -173,13 +174,10 @@ export default function TreeView({
 
   /* ----- member actions ----- */
 
-  /** Jump the canvas to a family unit (birth-family caption) with a pulse. */
-  function jumpToUnit(unitKey: string) {
+  /** Center an element in the canvas with a pulse. */
+  function centerOn(el: HTMLElement) {
     const c = containerRef.current;
-    const el = c?.querySelector(
-      `[data-unit-key="${CSS.escape(unitKey)}"]`
-    ) as HTMLElement | null;
-    if (!c || !el) return;
+    if (!c) return;
     // Screen-pixel math — zoom-independent.
     const cRect = c.getBoundingClientRect();
     const r = el.getBoundingClientRect();
@@ -193,6 +191,50 @@ export default function TreeView({
     el.classList.add("vv-flash");
     window.setTimeout(() => el.classList.remove("vv-flash"), 2300);
   }
+
+  /** Jump the canvas to a family unit (birth-family caption). */
+  function jumpToUnit(unitKey: string) {
+    const c = containerRef.current;
+    const el = c?.querySelector(
+      `[data-unit-key="${CSS.escape(unitKey)}"]`
+    ) as HTMLElement | null;
+    if (el) centerOn(el);
+  }
+
+  /** Jump to one person's card (header search picks). */
+  function jumpToPerson(personId: string) {
+    const c = containerRef.current;
+    const card = c?.querySelector(
+      `[data-person-id="${CSS.escape(personId)}"]`
+    ) as HTMLElement | null;
+    if (card) {
+      centerOn(card);
+      return;
+    }
+    // Fallback: center the person's family unit.
+    const unit = layoutSingleTree(persons, spouses).units.find(
+      (u) => u.main.id === personId || u.pair?.id === personId
+    );
+    if (unit) jumpToUnit(unit.key);
+  }
+
+  // Header search dispatches "vv:focus-person"; answer by switching to
+  // the pedigree view (if needed) and centering the person's card.
+  useEffect(() => {
+    const onFocus = (e: Event) => {
+      const id = (e as CustomEvent<{ personId?: string }>).detail?.personId;
+      if (!id) return;
+      if (view !== "pedigree") {
+        setView("pedigree");
+        window.setTimeout(() => jumpToPerson(id), 350);
+      } else {
+        jumpToPerson(id);
+      }
+    };
+    window.addEventListener("vv:focus-person", onFocus);
+    return () => window.removeEventListener("vv:focus-person", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persons, spouses, view]);
 
   async function handleDelete(p: Person) {
     if (
@@ -246,7 +288,7 @@ export default function TreeView({
   return (
     <div
       ref={containerRef}
-      className="vv-canvas card overflow-auto relative h-[calc(100vh_-_12rem)] min-h-[440px] flex"
+      className="vv-canvas card overflow-auto relative h-[calc(100dvh_-_5rem)] min-h-[440px] flex"
       style={{ cursor: panning ? "grabbing" : undefined }}
       onMouseDown={onPanStart}
       onMouseMove={onPanMove}
