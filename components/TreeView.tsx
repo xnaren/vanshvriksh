@@ -11,7 +11,6 @@ import EditPersonModal from "./EditPersonModal";
 import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
-import { buildFamilyUnits } from "./tree-graph";
 import { displayName } from "./MemberCard";
 
 type View = "pedigree" | "list";
@@ -60,20 +59,12 @@ export default function TreeView({
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const treeRef = useRef<HTMLUListElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(
     null
   );
   const [panning, setPanning] = useState(false);
-
-  // The pedigree unit plan, shared by the pedigree view (pure derivation
-  // of persons/spouses). Forests are ordered main-family first (left),
-  // birth families after (right); the outline view builds its own plan.
-  const units = useMemo(
-    () => buildFamilyUnits(persons, spouses, { orderForests: true }),
-    [persons, spouses]
-  );
 
   const clampZoom = (z: number) =>
     Math.min(2.5, Math.max(0.3, Math.round(z * 100) / 100));
@@ -313,13 +304,9 @@ export default function TreeView({
         /* m-auto centers the tree when it fits, and keeps it reachable
            by scroll when it overflows (the "safe center" pattern). */
         <div className="m-auto p-3">
-          <ul
-            ref={treeRef}
-            style={{ zoom }}
-            className="vv-tree flex gap-14 items-start justify-center min-w-max"
-          >
-            <PedigreeView units={units} cb={cb} />
-          </ul>
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <PedigreeView persons={persons} spouses={spouses} cb={cb} />
+          </div>
         </div>
       ) : (
         <div

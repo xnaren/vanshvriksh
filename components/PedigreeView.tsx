@@ -1,23 +1,19 @@
-// Top-down pedigree: each family unit (person + pair-able spouse) renders
-// as a couple block; children hang below joined by CSS pedigree lines.
+// Single-tree pedigree: every person appears exactly once, positioned by
+// the graph layout in tree-graph.ts (layoutSingleTree), with parent->child
+// lines drawn as independent SVG edges. Ancestor couples converge on the
+// couple below them, so both spouses show their own parents in ONE
+// connected tree — no duplicate cards, no captions, no jump links, and no
+// line ever lands on the wrong person (lines may cross; they never join
+// falsely).
 //
-// The unit plan is computed purely by buildFamilyUnits (no shared mutable
-// state during React rendering) so server and client always agree — see
-// tree-graph.ts for why this matters for hydration.
-//
-// Each root unit is its own forest, drawn side by side (main family
-// left, birth families right — see buildFamilyUnits' orderForests), so
-// every connector line means exactly what it says. A paired-away partner
-// whose parents are also in the tree (e.g. a wife shown with her
-// husband's family) also appears in her birth family as a leaf reference
-// card: the "⚭ spouse" note under it jumps the canvas to the couple, and
-// a small "d/o · s/o" caption under her card in the couple jumps back to
-// the birth family.
+// Line colors follow the focal couple (the deepest couple where both
+// partners have parents in the tree): blue = husband's side, orange =
+// wife's side, teal = shared (the couple's own descendants) or other.
 "use client";
 
 import { useMemo } from "react";
-import type { Person } from "@/lib/types";
-import { inLawCaptions, type FamilyUnit } from "./tree-graph";
+import type { Person, SpouseLink } from "@/lib/types";
+import { layoutSingleTree, type LineSide } from "./tree-graph";
 import MemberCard, { displayName } from "./MemberCard";
 
 export interface ViewCallbacks {
@@ -29,184 +25,100 @@ export interface ViewCallbacks {
   onJumpBirthFamily: (unitKey: string) => void;
 }
 
-type CaptionInfo = { unitKey: string; label: string };
-
-/** "d/o X & Y" — jumps the canvas to the person's birth family. */
-function BirthCaption({
-  person,
-  captions,
-  onJump,
-}: {
-  person: Person;
-  captions: Map<string, CaptionInfo>;
-  onJump: (unitKey: string) => void;
-}) {
-  const info = captions.get(person.id);
-  if (!info) return null;
-  const kin =
-    person.gender === "female"
-      ? "d/o"
-      : person.gender === "male"
-        ? "s/o"
-        : "child of";
-  return (
-    <button
-      type="button"
-      onClick={() => onJump(info.unitKey)}
-      title="Jump to birth family"
-      className="mt-1 text-[11px] leading-tight text-stone-500 hover:text-emerald-700 underline decoration-dotted underline-offset-2"
-    >
-      {kin} {info.label}
-    </button>
-  );
-}
-
-function FamilyUnitBody({
-  unit,
-  cb,
-  captions,
-}: {
-  unit: FamilyUnit;
-  cb: ViewCallbacks;
-  captions: Map<string, CaptionInfo>;
-}) {
-  const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
-  // `ref` children (paired-away partners with parents in the tree) render
-  // as leaf cards in their birth family — see the spouse-note jump link
-  // below. All children render; no connector ever crosses forests.
-  const visibleChildren = children;
-  const isRef = unit.ref === true;
-  // Reserve the caption row when either card in the couple has one, so the
-  // marriage node stays vertically centered on the cards. A ref card
-  // itself never carries a caption (it already sits in the birth family).
-  const reserveCaptionRow =
-    !isRef &&
-    (captions.has(p.id) || (pairWith ? captions.has(pairWith.id) : false));
-  const card = (person: Person) => (
-    <div className="flex flex-col items-center">
-      <MemberCard
-        p={person}
-        canEdit={cb.canEdit}
-        zoom={cb.zoom}
-        onEdit={cb.onEdit}
-        onDelete={cb.onDelete}
-        onAdd={cb.onAdd}
-      />
-      {reserveCaptionRow && (
-        // The caption is absolutely centered on the card so its text —
-        // two full parent names, wider than the card — can never stretch
-        // this column. In flow it widened the pair's column and shoved
-        // the card away from its spouse, splitting the couple visually.
-        <div className="mt-1 h-[15px] w-full relative">
-          <div className="absolute left-1/2 -translate-x-1/2 top-0 whitespace-nowrap text-[11px] leading-tight">
-            <BirthCaption
-              person={person}
-              captions={captions}
-              onJump={cb.onJumpBirthFamily}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-  return (
-    <>
-      <div className="flex flex-col items-center" data-unit-key={p.id}>
-        <div className="flex items-center">
-          {card(p)}
-          {pairWith && (
-            <>
-              {/* marriage node */}
-              <div className="flex items-center px-0.5" aria-hidden>
-                <div className="w-7 h-0.5 bg-rose-300 relative flex items-center justify-center">
-                  <span className="bg-white border border-rose-300 text-rose-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] leading-none">
-                    ⚭
-                  </span>
-                </div>
-              </div>
-              {card(pairWith)}
-            </>
-          )}
-        </div>
-        {spouse &&
-          (isRef ? (
-            // Birth-family reference card: the spouse note is the jump
-            // link to the couple (the spouse anchors it, so their id is
-            // the couple's unit key).
-            <button
-              type="button"
-              onClick={() => cb.onJumpBirthFamily(spouse.id)}
-              title="Jump to the couple"
-              className="text-xs text-rose-600 hover:text-rose-700 underline decoration-dotted underline-offset-2 mt-1"
-            >
-              ⚭ {displayName(spouse)}
-            </button>
-          ) : (
-            <div className="text-xs text-stone-500 mt-1">
-              ⚭ {displayName(spouse)}
-            </div>
-          ))}
-      </div>
-      {visibleChildren.length > 0 && (
-        <ul className="vv-children">
-          {visibleChildren.map((c) => (
-            <FamilyUnitView
-              key={c.main.id}
-              unit={c}
-              isRoot={false}
-              cb={cb}
-              captions={captions}
-            />
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
-
-function FamilyUnitView({
-  unit,
-  isRoot,
-  cb,
-  captions,
-}: {
-  unit: FamilyUnit;
-  isRoot: boolean;
-  cb: ViewCallbacks;
-  captions: Map<string, CaptionInfo>;
-}) {
-  return (
-    <li
-      className={
-        isRoot
-          ? "relative flex flex-col items-center shrink-0"
-          : "vv-family"
-      }
-    >
-      <FamilyUnitBody unit={unit} cb={cb} captions={captions} />
-    </li>
-  );
-}
+const SIDE_COLOR: Record<LineSide, string> = {
+  husband: "#4a9eda",
+  wife: "#ef8a2a",
+  shared: "#7db8a4",
+};
 
 export default function PedigreeView({
-  units,
+  persons,
+  spouses,
   cb,
 }: {
-  units: FamilyUnit[];
+  persons: Person[];
+  spouses: SpouseLink[];
   cb: ViewCallbacks;
 }) {
-  const captions = useMemo(() => inLawCaptions(units), [units]);
+  const layout = useMemo(
+    () => layoutSingleTree(persons, spouses),
+    [persons, spouses]
+  );
+  const card = (person: Person) => (
+    <MemberCard
+      p={person}
+      canEdit={cb.canEdit}
+      zoom={cb.zoom}
+      onEdit={cb.onEdit}
+      onDelete={cb.onDelete}
+      onAdd={cb.onAdd}
+    />
+  );
   return (
-    <>
-      {units.map((u) => (
-        <FamilyUnitView
-          key={u.main.id}
-          unit={u}
-          isRoot={true}
-          cb={cb}
-          captions={captions}
-        />
+    <div
+      className="relative"
+      style={{ width: layout.width, height: layout.height }}
+    >
+      <svg
+        className="absolute left-0 top-0"
+        width={layout.width}
+        height={layout.height}
+        aria-hidden
+      >
+        {layout.forks.map((f) => {
+          const color = SIDE_COLOR[f.side];
+          return (
+            <g key={f.parentKey} stroke={color} strokeWidth={2} fill="none">
+              <line x1={f.stemX} y1={f.stemTop} x2={f.stemX} y2={f.barY} />
+              <line x1={f.barX0} y1={f.barY} x2={f.barX1} y2={f.barY} />
+              {f.drops.map((dr) => (
+                <line
+                  key={dr.personId}
+                  x1={dr.x}
+                  y1={f.barY}
+                  x2={dr.x}
+                  y2={dr.top}
+                />
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      {layout.units.map((u) => (
+        <div
+          key={u.key}
+          className="absolute flex flex-col items-center"
+          style={{ left: u.x, top: u.y }}
+          data-unit-key={u.main.id}
+        >
+          <div className="flex items-center">
+            {card(u.main)}
+            {u.pair && (
+              <>
+                {/* marriage node — exactly JUNCTION_W wide so the pair
+                    card lands where the layout computed it */}
+                <div
+                  className="flex items-center justify-center shrink-0"
+                  style={{ width: 30 }}
+                  aria-hidden
+                >
+                  <div className="w-full h-0.5 bg-rose-300 relative flex items-center justify-center">
+                    <span className="bg-white border border-rose-300 text-rose-500 rounded-full w-5 h-5 flex items-center justify-center text-[10px] leading-none">
+                      ⚭
+                    </span>
+                  </div>
+                </div>
+                {card(u.pair)}
+              </>
+            )}
+          </div>
+          {u.spouseNote && (
+            <div className="text-xs text-stone-500 mt-1">
+              ⚭ {displayName(u.spouseNote)}
+            </div>
+          )}
+        </div>
       ))}
-    </>
+    </div>
   );
 }
