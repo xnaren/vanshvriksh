@@ -68,10 +68,10 @@ export default function TreeView({
   const [panning, setPanning] = useState(false);
 
   // The pedigree unit plan, shared by the pedigree view (pure derivation
-  // of persons/spouses). In-law parents dock above the couple here; the
-  // outline view builds its own undocked plan.
+  // of persons/spouses). Forests are ordered main-family first (left),
+  // birth families after (right); the outline view builds its own plan.
   const units = useMemo(
-    () => buildFamilyUnits(persons, spouses, { dockInLaws: true }),
+    () => buildFamilyUnits(persons, spouses, { orderForests: true }),
     [persons, spouses]
   );
 

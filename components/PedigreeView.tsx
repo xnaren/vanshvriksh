@@ -5,13 +5,14 @@
 // state during React rendering) so server and client always agree — see
 // tree-graph.ts for why this matters for hydration.
 //
-// A paired-away partner whose parents are also in the tree (e.g. a wife
-// shown with her husband's family) gets her parents' unit docked directly
-// above the couple, right-aligned over her card — so both spouses show
-// their own parents in one connected tree, no connector geometry needed.
-// When docking is ambiguous (several children married out), a small
-// "d/o · s/o" caption under the card jumps the canvas to the birth family
-// instead.
+// Each root unit is its own forest, drawn side by side (main family
+// left, birth families right — see buildFamilyUnits' orderForests), so
+// every connector line means exactly what it says. A paired-away partner
+// whose parents are also in the tree (e.g. a wife shown with her
+// husband's family) also appears in her birth family as a leaf reference
+// card: the "⚭ spouse" note under it jumps the canvas to the couple, and
+// a small "d/o · s/o" caption under her card in the couple jumps back to
+// the birth family.
 "use client";
 
 import { useMemo } from "react";
@@ -70,14 +71,17 @@ function FamilyUnitBody({
   captions: Map<string, CaptionInfo>;
 }) {
   const { main: p, pair: pairWith, spouseNote: spouse, children } = unit;
-  // `ref` children (paired-away partners with parents in the tree) are not
-  // rendered as cards here — the d/o·s/o caption links them instead, unless
-  // their parents' unit is docked above (see below).
-  const visibleChildren = children.filter((c) => !c.ref);
+  // `ref` children (paired-away partners with parents in the tree) render
+  // as leaf cards in their birth family — see the spouse-note jump link
+  // below. All children render; no connector ever crosses forests.
+  const visibleChildren = children;
+  const isRef = unit.ref === true;
   // Reserve the caption row when either card in the couple has one, so the
-  // marriage node stays vertically centered on the cards.
+  // marriage node stays vertically centered on the cards. A ref card
+  // itself never carries a caption (it already sits in the birth family).
   const reserveCaptionRow =
-    captions.has(p.id) || (pairWith ? captions.has(pairWith.id) : false);
+    !isRef &&
+    (captions.has(p.id) || (pairWith ? captions.has(pairWith.id) : false));
   const card = (person: Person) => (
     <div className="flex flex-col items-center">
       <MemberCard
@@ -101,23 +105,6 @@ function FamilyUnitBody({
   );
   return (
     <>
-      {/* Docked in-law parents: the pair's parents' unit, right-aligned over
-          the pair's card, with a short connector down to the couple. */}
-      {unit.inLaw && (
-        <div className="w-full flex justify-end mb-1">
-          <div className="flex flex-col items-center">
-            <FamilyUnitBody
-              unit={unit.inLaw}
-              cb={cb}
-              captions={captions}
-            />
-            <div
-              className="w-0 border-l-2 border-stone-300 h-6"
-              aria-hidden
-            />
-          </div>
-        </div>
-      )}
       <div className="flex flex-col items-center" data-unit-key={p.id}>
         <div className="flex items-center">
           {card(p)}
@@ -135,11 +122,24 @@ function FamilyUnitBody({
             </>
           )}
         </div>
-        {spouse && (
-          <div className="text-xs text-stone-500 mt-1">
-            ⚭ {displayName(spouse)}
-          </div>
-        )}
+        {spouse &&
+          (isRef ? (
+            // Birth-family reference card: the spouse note is the jump
+            // link to the couple (the spouse anchors it, so their id is
+            // the couple's unit key).
+            <button
+              type="button"
+              onClick={() => cb.onJumpBirthFamily(spouse.id)}
+              title="Jump to the couple"
+              className="text-xs text-rose-600 hover:text-rose-700 underline decoration-dotted underline-offset-2 mt-1"
+            >
+              ⚭ {displayName(spouse)}
+            </button>
+          ) : (
+            <div className="text-xs text-stone-500 mt-1">
+              ⚭ {displayName(spouse)}
+            </div>
+          ))}
       </div>
       {visibleChildren.length > 0 && (
         <ul className="vv-children">

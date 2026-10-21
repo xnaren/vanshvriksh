@@ -52,17 +52,15 @@ export function buildTreeGraph(
  *  block), an unpaired-spouse annotation, and nested child units.
  *  `ref` marks a leaf reference card: a paired-away partner shown in
  *  their birth family (annotated with their spouse), while the full
- *  couple renders at the anchor's position.
- *  `inLaw` docks the pair's parents' unit above the couple, so both
- *  spouses show their own parents (husband's above him via nesting,
- *  wife's docked above her) in a single connected tree. */
+ *  couple renders at the anchor's position. Each root unit is its own
+ *  forest on the canvas; forests are never merged, so every connector
+ *  line means exactly what it says. */
 export interface FamilyUnit {
   main: Person;
   pair?: Person;
   spouseNote?: Person;
   children: FamilyUnit[];
   ref?: boolean;
-  inLaw?: FamilyUnit;
 }
 
 /**
@@ -90,7 +88,7 @@ export interface FamilyUnit {
 export function buildFamilyUnits(
   persons: Person[],
   spouses: SpouseLink[],
-  opts?: { dockInLaws?: boolean }
+  opts?: { orderForests?: boolean }
 ): FamilyUnit[] {
   const graph = buildTreeGraph(persons, spouses);
 
@@ -162,74 +160,33 @@ export function buildFamilyUnits(
     if (u) units.push(u);
   }
 
-  if (opts?.dockInLaws) dockInLawParents(units, birthRef);
-  return units;
+  if (!opts?.orderForests) return units;
+  // Left/right forest split: forests that host couples come first (left);
+  // a birth-family forest — one whose link to the rest of the tree is a
+  // paired-away child (ref card) whose couple lives in another forest —
+  // goes after (right). Stable within each group, so relative order
+  // otherwise follows the person order.
+  const main: FamilyUnit[] = [];
+  const birth: FamilyUnit[] = [];
+  for (const u of units) (isBirthForest(u) ? birth : main).push(u);
+  return [...main, ...birth];
 }
 
-/** Detach a unit from the top-level roots or from a nested parent. */
-function detachUnit(roots: FamilyUnit[], target: FamilyUnit): boolean {
-  const ri = roots.indexOf(target);
-  if (ri >= 0) {
-    roots.splice(ri, 1);
-    return true;
-  }
-  const stack = [...roots];
+/** A forest is a "birth-family" forest when it holds a ref card whose
+ *  spouse (the couple's anchor) lives in a different forest — i.e. this
+ *  forest is on the canvas mainly to show that person's birth family. */
+function isBirthForest(root: FamilyUnit): boolean {
+  const ids = new Set<string>();
+  const refs: FamilyUnit[] = [];
+  const stack = [root];
   while (stack.length > 0) {
     const u = stack.pop()!;
-    const ci = u.children.indexOf(target);
-    if (ci >= 0) {
-      u.children.splice(ci, 1);
-      return true;
-    }
+    ids.add(u.main.id);
+    if (u.pair) ids.add(u.pair.id);
+    if (u.ref) refs.push(u);
     stack.push(...u.children);
   }
-  return false;
-}
-
-function containsPerson(root: FamilyUnit, id: string): boolean {
-  return (
-    root.main.id === id ||
-    root.pair?.id === id ||
-    root.children.some((c) => containsPerson(c, id))
-  );
-}
-
-/**
- * Dock in-law parents above the couple: for a couple whose pair has parents
- * in the tree, the pair's parents' unit is removed from its own position
- * and attached as `inLaw`, rendered directly above the couple (right-
- * aligned over the pair's card). Only when unambiguous — the parents' unit
- * must be a top-level root with exactly one ref child — otherwise the d/o·
- * s/o caption fallback covers it. Pure w.r.t. React rendering (runs inside
- * buildFamilyUnits' single pass).
- */
-function dockInLawParents(units: FamilyUnit[], birthRef: Set<string>) {
-  const all: FamilyUnit[] = [];
-  const walkAll = (u: FamilyUnit) => {
-    all.push(u);
-    u.children.forEach(walkAll);
-  };
-  units.forEach(walkAll);
-
-  const docked = new Set<FamilyUnit>();
-  for (const u of all) {
-    if (!u.pair || !birthRef.has(u.pair.id) || u.inLaw) continue;
-    // The parents' unit: the one holding this pair as a ref child.
-    const P = all.find(
-      (p) =>
-        p !== u && p.children.some((c) => c.ref && c.main.id === u.pair!.id)
-    );
-    if (!P || docked.has(P)) continue;
-    if (!units.includes(P)) continue; // top-level roots only
-    if (P.children.filter((c) => c.ref).length !== 1) continue;
-    if (containsPerson(P, u.main.id)) continue; // cycle guard
-    u.inLaw = P;
-    docked.add(P);
-    detachUnit(units, P);
-    // The ref card is superseded by the docked unit — drop it here. (The
-    // outline view builds a separate plan without docking, unaffected.)
-    P.children = P.children.filter((c) => !c.ref);
-  }
+  return refs.some((r) => r.spouseNote && !ids.has(r.spouseNote.id));
 }
 
 /** Birth-family jump info for paired-away partners: personId -> their
@@ -242,7 +199,6 @@ export function inLawCaptions(
   const name = (p: Person) =>
     `${p.given_name}${p.family_name ? " " + p.family_name : ""}`;
   const walk = (u: FamilyUnit) => {
-    if (u.inLaw) walk(u.inLaw);
     for (const c of u.children) {
       if (c.ref) {
         const parents = [u.main, u.pair].filter(Boolean) as Person[];
