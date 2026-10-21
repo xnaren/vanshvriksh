@@ -6,9 +6,13 @@
 // line ever lands on the wrong person (lines may cross; they never join
 // falsely).
 //
-// Line colors follow the focal couple (the deepest couple where both
-// partners have parents in the tree): blue = husband's side, orange =
-// wife's side, teal = shared (the couple's own descendants) or other.
+// Line colors are per person, by their role in their own couple: the
+// line dropping to a husband from his parents is blue, to a wife from
+// her parents is orange — at every couple in the tree, not just the
+// central one. A person with no couple inherits a coupled sibling's
+// color; children with no coupled sibling (e.g. the central couple's
+// own kids) are teal/shared. A fork's stem and bar take the drops'
+// color when they agree, else teal.
 "use client";
 
 import { useMemo } from "react";
@@ -65,24 +69,24 @@ export default function PedigreeView({
         height={layout.height}
         aria-hidden
       >
-        {layout.forks.map((f) => {
-          const color = SIDE_COLOR[f.side];
-          return (
-            <g key={f.parentKey} stroke={color} strokeWidth={2} fill="none">
+        {layout.forks.map((f) => (
+          <g key={f.parentKey} strokeWidth={2} fill="none">
+            <g stroke={SIDE_COLOR[f.side]}>
               <line x1={f.stemX} y1={f.stemTop} x2={f.stemX} y2={f.barY} />
               <line x1={f.barX0} y1={f.barY} x2={f.barX1} y2={f.barY} />
-              {f.drops.map((dr) => (
-                <line
-                  key={dr.personId}
-                  x1={dr.x}
-                  y1={f.barY}
-                  x2={dr.x}
-                  y2={dr.top}
-                />
-              ))}
             </g>
-          );
-        })}
+            {f.drops.map((dr) => (
+              <line
+                key={dr.personId}
+                stroke={SIDE_COLOR[dr.side]}
+                x1={dr.x}
+                y1={f.barY}
+                x2={dr.x}
+                y2={dr.top}
+              />
+            ))}
+          </g>
+        ))}
       </svg>
       {layout.units.map((u) => (
         <div

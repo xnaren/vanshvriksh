@@ -203,14 +203,15 @@ export interface PlacedUnit {
 
 export interface ForkLine {
   parentKey: string;
-  /** Side of the focal couple this descent belongs to (line color). */
+  /** Color of the stem + bar: the drops' color when they agree, else
+   *  "shared". Each drop carries its own side color. */
   side: LineSide;
   stemX: number;
   stemTop: number;
   barY: number;
   barX0: number;
   barX1: number;
-  drops: { personId: string; x: number; top: number }[];
+  drops: { personId: string; x: number; top: number; side: LineSide }[];
 }
 
 export interface TreeLayout {
@@ -459,6 +460,16 @@ export function layoutSingleTree(
     }
     return out;
   };
+  /** The husband of a couple unit: the male partner when exactly one
+   *  partner is male, otherwise the anchor (main). */
+  const husbandOf = (key: string): Person => {
+    const u = unitOf.get(key)!;
+    if (!u.pair) return u.main;
+    if (u.main.gender === "male" && u.pair.gender !== "male") return u.main;
+    if (u.pair.gender === "male" && u.main.gender !== "male") return u.pair;
+    return u.main;
+  };
+
   const findFocal = (): { husband: Person; wife: Person } | null => {
     let best: { husband: Person; wife: Person } | null = null;
     let bestGen = -1;
@@ -469,12 +480,7 @@ export function layoutSingleTree(
       const g = genOf.get(key) ?? 0;
       if (g > bestGen) {
         bestGen = g;
-        const husband =
-          u.main.gender === "male" && u.pair.gender !== "male"
-            ? u.main
-            : u.pair.gender === "male" && u.main.gender !== "male"
-              ? u.pair
-              : u.main;
+        const husband = husbandOf(key);
         best = { husband, wife: husband === u.main ? u.pair : u.main };
       }
     });
@@ -489,10 +495,35 @@ export function layoutSingleTree(
     wifeSide.add(focal.wife.id);
     ancestorsOf(focal.wife.id).forEach((id) => wifeSide.add(id));
   }
-  const sideOfUnit = (key: string): LineSide => {
-    const ms = membersOf(key);
-    if (ms.every((m) => husbandSide.has(m.id))) return "husband";
-    if (ms.every((m) => wifeSide.has(m.id))) return "wife";
+  /** A person's role in their own couple, if they have one in the
+   *  tree: "husband" (blue line) or "wife" (orange line). */
+  const roleInCouple = (pid: string): LineSide | null => {
+    const key = unitOfPerson.get(pid)!;
+    if (!unitOf.get(key)!.pair) return null;
+    return husbandOf(key).id === pid ? "husband" : "wife";
+  };
+
+  /** Color of the line dropping TO a person from their parents: their
+   *  role in their own couple. A person with no couple inherits a
+   *  coupled sibling's role (a brother stands in his sister's family
+   *  color); failing that, the focal couple's side sets decide;
+   *  anything else is shared. */
+  const dropSide = (p: Person): LineSide => {
+    const own = roleInCouple(p.id);
+    if (own) return own;
+    for (const sib of persons) {
+      if (sib.id === p.id) continue;
+      const sharesParent =
+        (p.father_id !== null && sib.father_id === p.father_id) ||
+        (p.mother_id !== null && sib.mother_id === p.mother_id) ||
+        (p.father_id !== null && sib.mother_id === p.father_id) ||
+        (p.mother_id !== null && sib.father_id === p.mother_id);
+      if (!sharesParent) continue;
+      const sibRole = roleInCouple(sib.id);
+      if (sibRole) return sibRole;
+    }
+    if (husbandSide.has(p.id)) return "husband";
+    if (wifeSide.has(p.id)) return "wife";
     return "shared";
   };
 
@@ -517,11 +548,16 @@ export function layoutSingleTree(
       personId: c.id,
       x: cardCenterX(c.id),
       top: (g + 1) * ROW_H,
+      side: dropSide(c),
     }));
     const xs = [stemX, ...drops.map((dr) => dr.x)];
+    const forkSide: LineSide =
+      drops.length > 0 && drops.every((dr) => dr.side === drops[0].side)
+        ? drops[0].side
+        : "shared";
     forks.push({
       parentKey: pu,
-      side: sideOfUnit(pu),
+      side: forkSide,
       stemX,
       stemTop: g * ROW_H + CARD_H,
       barY: bandTop + 12, // lane adjusted below
