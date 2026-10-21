@@ -93,12 +93,18 @@ function FamilyUnitBody({
         onAdd={cb.onAdd}
       />
       {reserveCaptionRow && (
-        <div className="mt-1 text-[11px] leading-tight min-h-[15px]">
-          <BirthCaption
-            person={person}
-            captions={captions}
-            onJump={cb.onJumpBirthFamily}
-          />
+        // The caption is absolutely centered on the card so its text —
+        // two full parent names, wider than the card — can never stretch
+        // this column. In flow it widened the pair's column and shoved
+        // the card away from its spouse, splitting the couple visually.
+        <div className="mt-1 h-[15px] w-full relative">
+          <div className="absolute left-1/2 -translate-x-1/2 top-0 whitespace-nowrap text-[11px] leading-tight">
+            <BirthCaption
+              person={person}
+              captions={captions}
+              onJump={cb.onJumpBirthFamily}
+            />
+          </div>
         </div>
       )}
     </div>
