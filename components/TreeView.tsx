@@ -1,7 +1,7 @@
 // Tree canvas orchestrator: zoomable/pannable viewport with a toolbar
-// (zoom controls + pedigree/outline view toggle), hosting either the
-// pedigree view or the folder-style outline view, plus the edit/add
-// modals.
+// (zoom controls + pedigree/ancestor-chart/outline view toggle),
+// hosting the single-tree pedigree, the horizontal ancestor chart, or
+// the folder-style outline view, plus the edit/add modals.
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -11,10 +11,11 @@ import EditPersonModal from "./EditPersonModal";
 import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
+import AncestorChartView from "./AncestorChartView";
 import { displayName } from "./MemberCard";
-import { layoutSingleTree } from "./tree-graph";
+import { layoutSingleTree, defaultAncestorFocus } from "./tree-graph";
 
-type View = "pedigree" | "list";
+type View = "pedigree" | "list" | "chart";
 
 function PedigreeGlyph() {
   return (
@@ -23,6 +24,17 @@ function PedigreeGlyph() {
       <circle cx="5.5" cy="19.5" r="2.5" />
       <circle cx="18.5" cy="19.5" r="2.5" />
       <path d="M12 7v4.5M12 11.5 5.5 17M12 11.5l6.5 5.5" />
+    </svg>
+  );
+}
+
+function ChartGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="5" cy="12" r="2.5" />
+      <circle cx="19" cy="5.5" r="2.5" />
+      <circle cx="19" cy="18.5" r="2.5" />
+      <path d="M7.5 12h3M10.5 12l6-4.5M10.5 12l6 4.5" />
     </svg>
   );
 }
@@ -52,6 +64,10 @@ export default function TreeView({
   canEdit: boolean;
 }) {
   const [view, setView] = useState<View>("pedigree");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(
+    new Set()
+  );
   const [editing, setEditing] = useState<Person | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addingFor, setAddingFor] = useState<Person | null>(null);
@@ -110,9 +126,9 @@ export default function TreeView({
 
   function fitToView() {
     const c = containerRef.current;
-    const t = (view === "pedigree"
-      ? treeRef.current
-      : listRef.current) as HTMLElement | null;
+    const t = (view === "list"
+      ? listRef.current
+      : treeRef.current) as HTMLElement | null;
     if (!c || !t) return;
     // CSS `zoom` scales layout, so divide back out to get the natural size.
     const naturalW = t.offsetWidth / zoomRef.current;
@@ -126,11 +142,11 @@ export default function TreeView({
     );
   }
 
-  // Mouse wheel zooms the pedigree, centered on the cursor. In outline
-  // view the wheel scrolls the list naturally.
+  // Mouse wheel zooms the pedigree and ancestor chart, centered on the
+  // cursor. In outline view the wheel scrolls the list naturally.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || view !== "pedigree") return;
+    if (!el || view === "list") return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       applyZoom(
@@ -218,12 +234,17 @@ export default function TreeView({
     if (unit) jumpToUnit(unit.key);
   }
 
-  // Header search dispatches "vv:focus-person"; answer by switching to
-  // the pedigree view (if needed) and centering the person's card.
+  // Header search dispatches "vv:focus-person"; answer by making that
+  // person the ancestor chart's focus, or by switching to the pedigree
+  // view (if needed) and centering the person's card.
   useEffect(() => {
     const onFocus = (e: Event) => {
       const id = (e as CustomEvent<{ personId?: string }>).detail?.personId;
       if (!id) return;
+      if (view === "chart") {
+        setFocusId(id);
+        return;
+      }
       if (view !== "pedigree") {
         setView("pedigree");
         window.setTimeout(() => jumpToPerson(id), 350);
@@ -251,6 +272,23 @@ export default function TreeView({
     }
     setDeletingId(null);
   }
+
+  /* ----- ancestor chart ----- */
+  const defaultFocus = useMemo(
+    () => defaultAncestorFocus(persons),
+    [persons]
+  );
+  const effectiveFocusId =
+    focusId && persons.some((p) => p.id === focusId)
+      ? focusId
+      : (defaultFocus?.id ?? persons[0]?.id);
+  const toggleCollapse = (id: string) =>
+    setCollapsedIds((cur) => {
+      const next = new Set<string>(Array.from(cur));
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   if (persons.length === 0) {
     return (
@@ -335,8 +373,34 @@ export default function TreeView({
         </button>
         <span className="w-px h-5 bg-stone-200 mx-0.5" aria-hidden />
         {viewButton("pedigree", "Pedigree view", <PedigreeGlyph />)}
+        {viewButton("chart", "Ancestor chart (horizontal)", <ChartGlyph />)}
         {viewButton("list", "Outline view", <ListGlyph />)}
       </div>
+
+      {/* ancestor-chart focus picker */}
+      {view === "chart" && effectiveFocusId && (
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-white/95 border border-stone-200 rounded-full shadow-sm pl-3 pr-1.5 py-1">
+          <label htmlFor="vv-focus" className="text-xs text-stone-500">
+            Focus
+          </label>
+          <div className="w-44">
+            <select
+              id="vv-focus"
+              value={effectiveFocusId}
+              onChange={(e) => setFocusId(e.target.value)}
+              className="!rounded-full !py-1 text-sm"
+            >
+              {[...persons]
+                .sort((a, b) => displayName(a).localeCompare(displayName(b)))
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {displayName(p)}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {deletingId && (
         <p className="text-xs text-stone-500 mb-2">Deleting…</p>
@@ -348,6 +412,18 @@ export default function TreeView({
         <div className="m-auto p-3">
           <div ref={treeRef} style={{ zoom }} className="relative">
             <PedigreeView persons={persons} spouses={spouses} cb={cb} />
+          </div>
+        </div>
+      ) : view === "chart" ? (
+        <div className="m-auto p-3">
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <AncestorChartView
+              persons={persons}
+              focusId={effectiveFocusId ?? ""}
+              collapsed={collapsedIds}
+              onToggleCollapse={toggleCollapse}
+              cb={cb}
+            />
           </div>
         </div>
       ) : (

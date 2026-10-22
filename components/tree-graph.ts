@@ -632,3 +632,159 @@ export function layoutSingleTree(
   const height = (Math.max(...units.map((u) => u.gen), 0) + 1) * ROW_H + 8;
   return { units, forks, width, height };
 }
+
+/* ---------- Horizontal ancestor chart (Gramps-style) ----------
+ * One focus person at the left; ancestors unfold to the right —
+ * father above mother at every step. A collapsed node hides its
+ * ancestors (chevron toggle in the view). The same ancestor reached
+ * by two paths is drawn twice (a tree unfolding, like Gramps).
+ * Edge color follows the parent: blue to a father, orange to a
+ * mother — the same role colors as the pedigree drops. Edge style
+ * cycles solid -> dash -> dot by distance from the focus person. */
+
+export const ANCESTOR_ROW_H = 84; // vertical slot per leaf line
+export const ANCESTOR_COL_W = CARD_W + 56; // depth step: card + elbow gap
+
+export interface AncestorNode {
+  person: Person;
+  depth: number; // 0 = focus person
+  x: number;
+  y: number;
+  hasParents: boolean;
+  collapsed: boolean;
+}
+
+export interface AncestorEdge {
+  childId: string;
+  parentId: string;
+  role: "father" | "mother";
+  style: LineStyle;
+  x1: number;
+  y1: number;
+  midX: number;
+  x2: number;
+  y2: number;
+}
+
+export interface AncestorChartLayout {
+  nodes: AncestorNode[];
+  edges: AncestorEdge[];
+  width: number;
+  height: number;
+}
+
+export function layoutAncestorChart(
+  persons: Person[],
+  focusId: string,
+  collapsed: ReadonlySet<string>
+): AncestorChartLayout {
+  const byId = new Map(persons.map((p) => [p.id, p]));
+  const focus = byId.get(focusId);
+  const nodes: AncestorNode[] = [];
+  const edges: AncestorEdge[] = [];
+  if (!focus) return { nodes, edges, width: 0, height: 0 };
+
+  const parentOf = (
+    p: Person,
+    role: "father" | "mother"
+  ): Person | undefined => {
+    const id = role === "father" ? p.father_id : p.mother_id;
+    return id ? byId.get(id) : undefined;
+  };
+
+  const STYLES: LineStyle[] = ["solid", "dash", "dot"];
+  let cursor = 0; // next free leaf row
+
+  const place = (p: Person, depth: number, seen: Set<string>): AncestorNode => {
+    const father = parentOf(p, "father");
+    const mother = parentOf(p, "mother");
+    const hasParents = Boolean(father || mother);
+    const isCollapsed = collapsed.has(p.id);
+    const node: AncestorNode = {
+      person: p,
+      depth,
+      x: depth * ANCESTOR_COL_W,
+      y: 0,
+      hasParents,
+      collapsed: isCollapsed,
+    };
+    nodes.push(node);
+    if (!hasParents || isCollapsed || seen.has(p.id)) {
+      node.y = cursor * ANCESTOR_ROW_H;
+      cursor += 1;
+      return node;
+    }
+    const nextSeen = new Set<string>(Array.from(seen));
+    nextSeen.add(p.id);
+    const placed: AncestorNode[] = [];
+    const roles: ("father" | "mother")[] = ["father", "mother"];
+    for (const role of roles) {
+      const parent = role === "father" ? father : mother;
+      if (!parent) continue;
+      placed.push(place(parent, depth + 1, nextSeen));
+      edges.push({
+        childId: p.id,
+        parentId: parent.id,
+        role,
+        style: STYLES[depth % 3],
+        x1: 0,
+        y1: 0,
+        midX: 0,
+        x2: 0,
+        y2: 0,
+      });
+    }
+    node.y = (placed[0].y + placed[placed.length - 1].y) / 2;
+    return node;
+  };
+
+  place(focus, 0, new Set<string>());
+
+  const nodeOf = new Map(nodes.map((n) => [n.person.id, n]));
+  for (const e of edges) {
+    const c = nodeOf.get(e.childId)!;
+    const par = nodeOf.get(e.parentId)!;
+    e.x1 = c.x + CARD_W;
+    e.y1 = c.y + CARD_H / 2;
+    e.x2 = par.x;
+    e.y2 = par.y + CARD_H / 2;
+    e.midX = c.x + CARD_W + (ANCESTOR_COL_W - CARD_W) / 2;
+  }
+
+  const width = Math.max(...nodes.map((n) => n.x + CARD_W), 0) + 8;
+  const height = cursor * ANCESTOR_ROW_H + 8;
+  return { nodes, edges, width, height };
+}
+
+/** The person with the most recorded ancestors (ties: first in tree
+ *  order) — the natural default focus for the ancestor chart. */
+export function defaultAncestorFocus(persons: Person[]): Person | null {
+  if (persons.length === 0) return null;
+  const byId = new Map(persons.map((p) => [p.id, p]));
+  const countAncestors = (p: Person): number => {
+    const seen = new Set<string>();
+    const stack: Person[] = [p];
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      const parents = [cur.father_id, cur.mother_id];
+      for (const pid of parents) {
+        const par = pid ? byId.get(pid) : undefined;
+        if (par && !seen.has(par.id)) {
+          seen.add(par.id);
+          stack.push(par);
+        }
+      }
+    }
+    return seen.size;
+  };
+  let best = persons[0];
+  let bestCount = -1;
+  for (const p of persons) {
+    const c = countAncestors(p);
+    if (c > bestCount) {
+      best = p;
+      bestCount = c;
+    }
+  }
+  return best;
+}
