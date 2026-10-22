@@ -15,7 +15,7 @@ import AncestorChartView from "./AncestorChartView";
 import { displayName } from "./MemberCard";
 import { layoutSingleTree, defaultAncestorFocus } from "./tree-graph";
 
-type View = "pedigree" | "list" | "chart" | "tree1";
+type View = "pedigree" | "list" | "chart";
 
 function PedigreeGlyph() {
   return (
@@ -373,11 +373,6 @@ export default function TreeView({
         </button>
         <span className="w-px h-5 bg-stone-200 mx-0.5" aria-hidden />
         {viewButton("pedigree", "Pedigree view", <PedigreeGlyph />)}
-        {viewButton(
-          "tree1",
-          "Tree view 1 (trial): husband left, sisters left",
-          <span className="text-[10px] font-bold tracking-tight">T1</span>
-        )}
         {viewButton("chart", "Ancestor chart (horizontal)", <ChartGlyph />)}
         {viewButton("list", "Outline view", <ListGlyph />)}
       </div>
@@ -417,17 +412,6 @@ export default function TreeView({
         <div className="m-auto p-3">
           <div ref={treeRef} style={{ zoom }} className="relative">
             <PedigreeView persons={persons} spouses={spouses} cb={cb} />
-          </div>
-        </div>
-      ) : view === "tree1" ? (
-        <div className="m-auto p-3">
-          <div ref={treeRef} style={{ zoom }} className="relative">
-            <PedigreeView
-              persons={persons}
-              spouses={spouses}
-              cb={cb}
-              ordering="gendered"
-            />
           </div>
         </div>
       ) : view === "chart" ? (

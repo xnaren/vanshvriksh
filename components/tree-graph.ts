@@ -229,14 +229,10 @@ export interface TreeLayout {
 
 const unitW = (pair?: Person) => (pair ? CARD_W * 2 + JUNCTION_W : CARD_W);
 
-export type TreeOrdering = "natural" | "gendered";
-
 export function layoutSingleTree(
   persons: Person[],
-  spouses: SpouseLink[],
-  opts?: { ordering?: TreeOrdering }
+  spouses: SpouseLink[]
 ): TreeLayout {
-  const gendered = opts?.ordering === "gendered";
   const graph = buildTreeGraph(persons, spouses);
 
   // Pairing — identical rule to buildFamilyUnits: the partner with
@@ -280,27 +276,24 @@ export function layoutSingleTree(
     unitOfPerson.set(p.id, p.id);
   }
 
-  // Gendered ordering (trial "tree view 1"): within every couple the
-  // husband's card goes on the left, the wife's on the right — the
-  // anchor (whose birth family hosts the couple) is unchanged, only
-  // the two cards swap slots. Sibling order is applied in
-  // childPersonsOf below.
-  if (gendered) {
-    unitOf.forEach((u) => {
-      if (!u.pair) return;
-      const husband =
-        u.main.gender === "male" && u.pair.gender !== "male"
-          ? u.main
-          : u.pair.gender === "male" && u.main.gender !== "male"
-            ? u.pair
-            : null;
-      if (husband && husband === u.pair) {
-        const t = u.main;
-        u.main = u.pair;
-        u.pair = t;
-      }
-    });
-  }
+  // Couple card order: the husband's card goes on the left, the
+  // wife's on the right — the anchor (whose birth family hosts the
+  // couple) is unchanged, only the two cards swap slots. Sibling
+  // order (sisters left of brothers) is applied in childPersonsOf.
+  unitOf.forEach((u) => {
+    if (!u.pair) return;
+    const husband =
+      u.main.gender === "male" && u.pair.gender !== "male"
+        ? u.main
+        : u.pair.gender === "male" && u.main.gender !== "male"
+          ? u.pair
+          : null;
+    if (husband && husband === u.pair) {
+      const t = u.main;
+      u.main = u.pair;
+      u.pair = t;
+    }
+  });
 
   const membersOf = (key: string): Person[] => {
     const u = unitOf.get(key)!;
@@ -315,13 +308,11 @@ export function layoutSingleTree(
         if (!out.some((o) => o.id === c.id)) out.push(c);
       }
     }
-    if (gendered) {
-      // Sisters to the left of brothers (stable within each group, so
-      // birth/tree order is kept among sisters and among brothers).
-      const rank = (p: Person) =>
-        p.gender === "female" ? 0 : p.gender === "male" ? 2 : 1;
-      out.sort((a, b) => rank(a) - rank(b));
-    }
+    // Sisters to the left of brothers (stable within each group, so
+    // birth/tree order is kept among sisters and among brothers).
+    const rank = (p: Person) =>
+      p.gender === "female" ? 0 : p.gender === "male" ? 2 : 1;
+    out.sort((a, b) => rank(a) - rank(b));
     return out;
   };
 
