@@ -44,14 +44,17 @@ export default function PedigreeView({
   persons,
   spouses,
   cb,
+  ordering,
 }: {
   persons: Person[];
   spouses: SpouseLink[];
   cb: ViewCallbacks;
+  /** "gendered" = trial tree view 1 (husband left, sisters left). */
+  ordering?: "natural" | "gendered";
 }) {
   const layout = useMemo(
-    () => layoutSingleTree(persons, spouses),
-    [persons, spouses]
+    () => layoutSingleTree(persons, spouses, { ordering }),
+    [persons, spouses, ordering]
   );
   const card = (person: Person) => (
     <MemberCard

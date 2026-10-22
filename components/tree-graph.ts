@@ -229,10 +229,14 @@ export interface TreeLayout {
 
 const unitW = (pair?: Person) => (pair ? CARD_W * 2 + JUNCTION_W : CARD_W);
 
+export type TreeOrdering = "natural" | "gendered";
+
 export function layoutSingleTree(
   persons: Person[],
-  spouses: SpouseLink[]
+  spouses: SpouseLink[],
+  opts?: { ordering?: TreeOrdering }
 ): TreeLayout {
+  const gendered = opts?.ordering === "gendered";
   const graph = buildTreeGraph(persons, spouses);
 
   // Pairing — identical rule to buildFamilyUnits: the partner with
@@ -276,6 +280,28 @@ export function layoutSingleTree(
     unitOfPerson.set(p.id, p.id);
   }
 
+  // Gendered ordering (trial "tree view 1"): within every couple the
+  // husband's card goes on the left, the wife's on the right — the
+  // anchor (whose birth family hosts the couple) is unchanged, only
+  // the two cards swap slots. Sibling order is applied in
+  // childPersonsOf below.
+  if (gendered) {
+    unitOf.forEach((u) => {
+      if (!u.pair) return;
+      const husband =
+        u.main.gender === "male" && u.pair.gender !== "male"
+          ? u.main
+          : u.pair.gender === "male" && u.main.gender !== "male"
+            ? u.pair
+            : null;
+      if (husband && husband === u.pair) {
+        const t = u.main;
+        u.main = u.pair;
+        u.pair = t;
+      }
+    });
+  }
+
   const membersOf = (key: string): Person[] => {
     const u = unitOf.get(key)!;
     return u.pair ? [u.main, u.pair] : [u.main];
@@ -288,6 +314,13 @@ export function layoutSingleTree(
       for (const c of graph.childrenOf.get(m.id) ?? []) {
         if (!out.some((o) => o.id === c.id)) out.push(c);
       }
+    }
+    if (gendered) {
+      // Sisters to the left of brothers (stable within each group, so
+      // birth/tree order is kept among sisters and among brothers).
+      const rank = (p: Person) =>
+        p.gender === "female" ? 0 : p.gender === "male" ? 2 : 1;
+      out.sort((a, b) => rank(a) - rank(b));
     }
     return out;
   };
@@ -567,6 +600,7 @@ export function layoutSingleTree(
       top: (g + 1) * ROW_H,
       side: dropSide(c),
     }));
+    drops.sort((a, b) => a.x - b.x); // canonical: left to right
     const xs = [stemX, ...drops.map((dr) => dr.x)];
     const forkSide: LineSide =
       drops.length > 0 && drops.every((dr) => dr.side === drops[0].side)
