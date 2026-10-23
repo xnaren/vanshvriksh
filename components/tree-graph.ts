@@ -813,3 +813,505 @@ export function defaultAncestorFocus(persons: Person[]): Person | null {
   }
   return best;
 }
+
+/* ======================================================================
+ * Fan chart layout (radial view).
+ *
+ * The focus person sits at the center; ancestors occupy annular
+ * segments in rings around them — parents in ring 1, grandparents in
+ * ring 2, and so on. The father's half of the circle is the left half,
+ * the mother's the right half; within any person's span, their father's
+ * sub-span is always the half nearer the top (north), their mother's
+ * the half nearer the bottom. Angles are degrees in screen coords
+ * (0 = east, increasing clockwise, so 90 = south, 270 = north).
+ * Missing ancestors simply leave their arc empty — geometry stays
+ * truthful. Ancestors only: no spouses, siblings, or descendants.
+ * ==================================================================== */
+
+export interface FanSegment {
+  person: Person;
+  depth: number; // 1 = parents' ring
+  startAngle: number;
+  endAngle: number;
+  side: "father" | "mother";
+}
+
+export interface FanLayout {
+  focus: Person;
+  segments: FanSegment[];
+  maxDepth: number; // deepest ring that has anyone in it
+}
+
+export function layoutFanChart(
+  persons: Person[],
+  focusId: string,
+  maxDepth = 5
+): FanLayout | null {
+  const byId = new Map(persons.map((p) => [p.id, p]));
+  const focus = byId.get(focusId);
+  if (!focus) return null;
+  const segments: FanSegment[] = [];
+  let deepest = 0;
+
+  // Angular distance from an angle to north (270).
+  const northDist = (a: number) => {
+    const d = Math.abs(((a - 270) % 360 + 360) % 360);
+    return Math.min(d, 360 - d);
+  };
+
+  const walk = (
+    p: Person,
+    depth: number,
+    a0: number,
+    a1: number,
+    side: "father" | "mother"
+  ) => {
+    if (depth > maxDepth) return;
+    const mid = (a0 + a1) / 2;
+    // Father takes the half nearer north; mother the other half.
+    const fatherSpan: [number, number] =
+      northDist((a0 + mid) / 2) <= northDist((mid + a1) / 2)
+        ? [a0, mid]
+        : [mid, a1];
+    const motherSpan: [number, number] =
+      fatherSpan[0] === a0 && fatherSpan[1] === mid ? [mid, a1] : [a0, mid];
+    const father = p.father_id ? byId.get(p.father_id) : undefined;
+    const mother = p.mother_id ? byId.get(p.mother_id) : undefined;
+    if (father) {
+      segments.push({
+        person: father,
+        depth,
+        startAngle: fatherSpan[0],
+        endAngle: fatherSpan[1],
+        side,
+      });
+      deepest = Math.max(deepest, depth);
+      walk(father, depth + 1, fatherSpan[0], fatherSpan[1], side);
+    }
+    if (mother) {
+      segments.push({
+        person: mother,
+        depth,
+        startAngle: motherSpan[0],
+        endAngle: motherSpan[1],
+        side,
+      });
+      deepest = Math.max(deepest, depth);
+      walk(mother, depth + 1, motherSpan[0], motherSpan[1], side);
+    }
+  };
+
+  // Father's branch: the left half [90, 270]; mother's: [270, 450].
+  if (focus.father_id && byId.has(focus.father_id)) {
+    const f = byId.get(focus.father_id)!;
+    segments.push({ person: f, depth: 1, startAngle: 90, endAngle: 270, side: "father" });
+    deepest = 1;
+    walk(f, 2, 90, 270, "father");
+  }
+  if (focus.mother_id && byId.has(focus.mother_id)) {
+    const m = byId.get(focus.mother_id)!;
+    segments.push({ person: m, depth: 1, startAngle: 270, endAngle: 450, side: "mother" });
+    deepest = Math.max(deepest, 1);
+    walk(m, 2, 270, 450, "mother");
+  }
+  return { focus, segments, maxDepth: deepest };
+}
+
+/* ======================================================================
+ * Hourglass layout.
+ *
+ * Focus couple at generation 0. Ancestors of the focus person rise
+ * above (each parent couple centered over the child it connects to,
+ * father's side left, mother's side right); descendants fall below
+ * (classic tidy descendant tree of the focus couple). Cards and fork
+ * geometry reuse the pedigree view's shapes, so MemberCard and the
+ * fork renderer work unchanged.
+ * ==================================================================== */
+
+export interface HourglassLayout {
+  units: PlacedUnit[];
+  forks: ForkLine[];
+  width: number;
+  height: number;
+  focusKey: string;
+}
+
+export function layoutHourglass(
+  persons: Person[],
+  spouses: SpouseLink[],
+  focusId: string,
+  maxUp = 4,
+  maxDown = 4
+): HourglassLayout | null {
+  const graph = buildTreeGraph(persons, spouses);
+  const focus = graph.byId.get(focusId);
+  if (!focus) return null;
+
+  interface HU {
+    key: string;
+    main: Person;
+    pair?: Person;
+  }
+  const units = new Map<string, HU>();
+  const addCouple = (a: Person, b?: Person): string => {
+    // Husband-left ordering, as in the pedigree view.
+    let main = a;
+    let pair = b;
+    if (pair && pair.gender === "male" && main.gender !== "male") {
+      main = pair;
+      pair = a;
+    }
+    const key = main.id;
+    if (!units.has(key)) units.set(key, { key, main, pair });
+    return key;
+  };
+  const spouseOf = (p: Person): Person | undefined => {
+    const sId = graph.partnerOf.get(p.id);
+    return sId ? graph.byId.get(sId) : undefined;
+  };
+
+  // ---- descendants ------------------------------------------------------
+  const downChildren = (u: HU): Person[] => {
+    // Children hosted here come through a member of this couple; a
+    // child with both parents recorded belongs to the couple matching
+    // both, otherwise to the recorded parent's couple. Dedupe by id,
+    // sisters first (the pedigree sibling rule).
+    const memberIds = new Set([u.main.id, u.pair?.id].filter(Boolean) as string[]);
+    const out: Person[] = [];
+    for (const m of [u.main, u.pair]) {
+      if (!m) continue;
+      for (const c of graph.childrenOf.get(m.id) ?? []) {
+        if (out.some((o) => o.id === c.id)) continue;
+        const otherParent =
+          c.father_id === m.id ? c.mother_id : c.father_id;
+        if (otherParent && graph.byId.has(otherParent) && !memberIds.has(otherParent)) {
+          // The child's other parent is someone else — the child
+          // belongs to this couple only if that other parent is not
+          // part of any couple in this hourglass' bloodline path;
+          // simplest truthful rule: host here only when the other
+          // parent is this member's recorded partner or unrecorded.
+          const partner = spouseOf(m);
+          if (partner && partner.id !== otherParent) continue;
+        }
+        out.push(c);
+      }
+    }
+    const rank = (p: Person) =>
+      p.gender === "female" ? 0 : p.gender === "male" ? 2 : 1;
+    out.sort((a, b) => rank(a) - rank(b));
+    return out;
+  };
+  const downUnitOf = (child: Person): string =>
+    addCouple(child, spouseOf(child));
+
+  const downSpan = new Map<string, number>();
+  const measureDown = (key: string, depth: number, seen: Set<string>): number => {
+    if (downSpan.has(key)) return downSpan.get(key)!;
+    if (seen.has(key) || depth > maxDown) return unitW(units.get(key)!.pair);
+    seen.add(key);
+    const u = units.get(key)!;
+    let w = unitW(u.pair);
+    if (depth < maxDown) {
+      const kidUnits = downChildren(u).map((c) => downUnitOf(c));
+      if (kidUnits.length > 0) {
+        w = Math.max(
+          w,
+          kidUnits.reduce((s, k) => s + measureDown(k, depth + 1, seen), 0) +
+            H_GAP * (kidUnits.length - 1)
+        );
+      }
+    }
+    downSpan.set(key, w);
+    return w;
+  };
+
+  const pos = new Map<string, { x: number; gen: number }>();
+  const placeDown = (key: string, left: number, gen: number, seen: Set<string>) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const u = units.get(key)!;
+    const w = unitW(u.pair);
+    pos.set(key, { x: left + (measureDown(key, gen, new Set()) - w) / 2, gen });
+    if (gen >= maxDown) return;
+    let x = left;
+    for (const c of downChildren(u)) {
+      const ck = downUnitOf(c);
+      placeDown(ck, x, gen + 1, seen);
+      x += measureDown(ck, gen + 1, new Set()) + H_GAP;
+    }
+  };
+
+  // ---- ancestors ----------------------------------------------------------
+  interface UpNode {
+    father?: Person;
+    mother?: Person;
+    key: string; // couple key (husband-left main id, or the solo parent's id)
+  }
+  const upCoupleOf = (p: Person): UpNode | null => {
+    const father = p.father_id ? graph.byId.get(p.father_id) : undefined;
+    const mother = p.mother_id ? graph.byId.get(p.mother_id) : undefined;
+    if (!father && !mother) return null;
+    const key = addCouple(father ?? mother!, father && mother ? mother : undefined);
+    return { father, mother, key };
+  };
+  const upSpan = new Map<string, number>();
+  const measureUp = (p: Person, depth: number, seen: Set<string>): number => {
+    const node = upCoupleOf(p);
+    if (!node) return 0;
+    if (upSpan.has(node.key)) return upSpan.get(node.key)!;
+    if (seen.has(node.key) || depth > maxUp) return unitW(units.get(node.key)!.pair);
+    seen.add(node.key);
+    let w = unitW(units.get(node.key)!.pair);
+    if (depth < maxUp) {
+      const fs = node.father ? measureUp(node.father, depth + 1, seen) : 0;
+      const ms = node.mother ? measureUp(node.mother, depth + 1, seen) : 0;
+      if (fs + ms > 0) w = Math.max(w, fs + ms + (fs > 0 && ms > 0 ? H_GAP : 0));
+    }
+    upSpan.set(node.key, w);
+    return w;
+  };
+  const placeUp = (p: Person, centerX: number, gen: number, depth: number, seen: Set<string>) => {
+    const node = upCoupleOf(p);
+    if (!node || seen.has(node.key) || depth > maxUp) return;
+    seen.add(node.key);
+    const u = units.get(node.key)!;
+    pos.set(node.key, { x: centerX - unitW(u.pair) / 2, gen });
+    if (depth >= maxUp) return;
+    const fs = node.father ? measureUp(node.father, depth + 1, new Set()) : 0;
+    const ms = node.mother ? measureUp(node.mother, depth + 1, new Set()) : 0;
+    const total = fs + ms + (fs > 0 && ms > 0 ? H_GAP : 0);
+    let cursor = centerX - total / 2;
+    if (node.father && fs > 0) {
+      placeUp(node.father, cursor + fs / 2, gen - 1, depth + 1, seen);
+      cursor += fs + H_GAP;
+    }
+    if (node.mother && ms > 0) {
+      placeUp(node.mother, cursor + ms / 2, gen - 1, depth + 1, seen);
+    }
+  };
+
+  // ---- assemble -------------------------------------------------------------
+  const focusKey = addCouple(focus, spouseOf(focus));
+  measureDown(focusKey, 0, new Set());
+  placeDown(focusKey, 0, 0, new Set());
+  // Center the ancestor tower over the focus person's own card.
+  const focusPos = pos.get(focusKey)!;
+  const fu = units.get(focusKey)!;
+  const focusCardCX =
+    focusPos.x + (fu.main.id === focus.id ? CARD_W / 2 : CARD_W + JUNCTION_W + CARD_W / 2);
+  placeUp(focus, focusCardCX, -1, 1, new Set());
+
+  // Normalize x to start at 0.
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minGen = 0;
+  let maxGen = 0;
+  pos.forEach(({ x, gen }, key) => {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x + unitW(units.get(key)!.pair));
+    minGen = Math.min(minGen, gen);
+    maxGen = Math.max(maxGen, gen);
+  });
+  const shift = -minX;
+  const yOf = (gen: number) => (gen - minGen) * ROW_H;
+
+  const placed: PlacedUnit[] = [];
+  const unitByKey = new Map<string, PlacedUnit>();
+  pos.forEach(({ x, gen }, key) => {
+    const u = units.get(key)!;
+    const pu: PlacedUnit = {
+      key,
+      main: u.main,
+      pair: u.pair,
+      x: x + shift,
+      y: yOf(gen),
+      gen,
+    };
+    placed.push(pu);
+    unitByKey.set(key, pu);
+  });
+  const cardCX = (pu: PlacedUnit, pid: string) =>
+    pu.main.id === pid
+      ? pu.x + CARD_W / 2
+      : pu.x + CARD_W + JUNCTION_W + CARD_W / 2;
+  const junctionCX = (pu: PlacedUnit) =>
+    pu.x + (pu.pair ? CARD_W + JUNCTION_W / 2 : CARD_W / 2);
+
+  const styleFor = (genDist: number): LineStyle =>
+    (["solid", "dash", "dot"] as const)[Math.abs(genDist) % 3];
+  const roleSide = (p: Person): LineSide =>
+    p.gender === "male" ? "husband" : p.gender === "female" ? "wife" : "shared";
+
+  const forks: ForkLine[] = [];
+  // Down forks: couple -> its hosted children.
+  pos.forEach(({ gen }, key) => {
+    if (gen >= maxDown) return;
+    const u = units.get(key)!;
+    const kids = downChildren(u);
+    if (kids.length === 0) return;
+    const pu = unitByKey.get(key)!;
+    const bandTop = (gen - minGen + 1) * ROW_H - (ROW_H - CARD_H);
+    const drops = kids
+      .map((c) => {
+        const ck = downUnitOf(c);
+        const cu = unitByKey.get(ck);
+        if (!cu) return null;
+        return {
+          personId: c.id,
+          x: cardCX(cu, c.id),
+          top: cu.y,
+          side: roleSide(c),
+        };
+      })
+      .filter(Boolean) as ForkLine["drops"];
+    if (drops.length === 0) return;
+    drops.sort((a, b) => a.x - b.x);
+    const stemX = junctionCX(pu);
+    const xs = [stemX, ...drops.map((d) => d.x)];
+    forks.push({
+      parentKey: key,
+      side:
+        drops.every((d) => d.side === drops[0].side) ? drops[0].side : "shared",
+      style: styleFor(gen),
+      stemX,
+      stemTop: pu.y + CARD_H,
+      barY: bandTop + 12,
+      barX0: Math.min(...xs),
+      barX1: Math.max(...xs),
+      drops,
+    });
+  });
+  // Up forks: each parent couple -> the child it connects to below.
+  const childUnitKeyOf = new Map<string, string>();
+  pos.forEach((_, key) => {
+    const u = units.get(key)!;
+    childUnitKeyOf.set(u.main.id, key);
+    if (u.pair) childUnitKeyOf.set(u.pair.id, key);
+  });
+  const walkUpForks = (p: Person, depth: number, seen: Set<string>) => {
+    const node = upCoupleOf(p);
+    if (!node || seen.has(node.key) || depth > maxUp) return;
+    seen.add(node.key);
+    const pu = unitByKey.get(node.key);
+    const childKey = childUnitKeyOf.get(p.id);
+    const cu = childKey ? unitByKey.get(childKey) : undefined;
+    if (pu && cu) {
+      const fromFather = node.father?.id === p.father_id;
+      const side: LineSide = fromFather ? "husband" : "wife";
+      const bandTop = cu.y - (ROW_H - CARD_H);
+      forks.push({
+        parentKey: node.key,
+        side,
+        style: styleFor(cu.gen),
+        stemX: junctionCX(pu),
+        stemTop: pu.y + CARD_H,
+        barY: bandTop + 12,
+        barX0: Math.min(junctionCX(pu), cardCX(cu, p.id)),
+        barX1: Math.max(junctionCX(pu), cardCX(cu, p.id)),
+        drops: [{ personId: p.id, x: cardCX(cu, p.id), top: cu.y, side }],
+      });
+    }
+    if (node.father) walkUpForks(node.father, depth + 1, seen);
+    if (node.mother) walkUpForks(node.mother, depth + 1, seen);
+  };
+  walkUpForks(focus, 1, new Set());
+
+  return {
+    units: placed,
+    forks,
+    width: maxX - minX,
+    height: (maxGen - minGen + 1) * ROW_H - (ROW_H - CARD_H),
+    focusKey,
+  };
+}
+
+/* ======================================================================
+ * Timeline layout.
+ *
+ * Everyone with a recorded birth date gets a lifespan bar on a year
+ * axis, grouped into generation bands (generation = longest parent
+ * chain from a root). People without a birth date are returned
+ * separately so the view can list them honestly instead of guessing.
+ * ==================================================================== */
+
+export interface TimelineEntry {
+  person: Person;
+  birthYear: number;
+  /** Null when the person is not living but no death date is recorded:
+   *  the view draws an open-ended bar rather than inventing a year. */
+  endYear: number | null;
+  living: boolean;
+  gen: number;
+  row: number; // row index within the whole chart (bands stack)
+}
+
+export interface TimelineLayout {
+  entries: TimelineEntry[];
+  undated: Person[];
+  minYear: number;
+  maxYear: number;
+  bandCount: number;
+}
+
+const yearOf = (d: string | null): number | null => {
+  if (!d) return null;
+  const y = parseInt(d.slice(0, 4), 10);
+  return Number.isFinite(y) ? y : null;
+};
+
+export function layoutTimeline(
+  persons: Person[],
+  currentYear: number
+): TimelineLayout {
+  const graph = buildTreeGraph(persons, []);
+  const genMemo = new Map<string, number>();
+  const genOf = (p: Person, seen: Set<string>): number => {
+    if (genMemo.has(p.id)) return genMemo.get(p.id)!;
+    if (seen.has(p.id)) return 0;
+    seen.add(p.id);
+    let g = 0;
+    for (const par of [p.father_id, p.mother_id]) {
+      if (par && graph.byId.has(par)) {
+        g = Math.max(g, genOf(graph.byId.get(par)!, seen) + 1);
+      }
+    }
+    genMemo.set(p.id, g);
+    return g;
+  };
+
+  const entries: TimelineEntry[] = [];
+  const undated: Person[] = [];
+  for (const p of persons) {
+    const b = yearOf(p.dob);
+    if (b === null) {
+      undated.push(p);
+      continue;
+    }
+    const d = yearOf(p.dod);
+    entries.push({
+      person: p,
+      birthYear: b,
+      endYear: p.is_living ? currentYear : d,
+      living: p.is_living,
+      gen: genOf(p, new Set()),
+      row: 0,
+    });
+  }
+  entries.sort(
+    (a, b) =>
+      a.gen - b.gen ||
+      a.birthYear - b.birthYear ||
+      a.person.given_name.localeCompare(b.person.given_name)
+  );
+  entries.forEach((e, i) => (e.row = i));
+  undated.sort((a, b) => a.given_name.localeCompare(b.given_name));
+
+  const years = entries.flatMap((e) => [e.birthYear, e.endYear ?? e.birthYear]);
+  return {
+    entries,
+    undated,
+    minYear: years.length ? Math.min(...years) : currentYear,
+    maxYear: years.length ? Math.max(...years) : currentYear,
+    bandCount: entries.length ? Math.max(...entries.map((e) => e.gen)) + 1 : 0,
+  };
+}

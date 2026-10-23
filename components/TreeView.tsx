@@ -12,10 +12,14 @@ import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
 import TreeListView from "./TreeListView";
 import AncestorChartView from "./AncestorChartView";
+import FanChartView from "./FanChartView";
+import HourglassView from "./HourglassView";
+import TimelineView from "./TimelineView";
+import MapView from "./MapView";
 import { displayName } from "./MemberCard";
 import { layoutSingleTree, defaultAncestorFocus } from "./tree-graph";
 
-type View = "pedigree" | "list" | "chart";
+type View = "pedigree" | "list" | "chart" | "fan" | "hourglass" | "timeline" | "map";
 
 function PedigreeGlyph() {
   return (
@@ -52,6 +56,44 @@ function ListGlyph() {
   );
 }
 
+function FanGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="2" />
+      <path d="M12 10V3M13.8 10.8 19 6M10.2 10.8 5 6M14 12h7M10 12H3" />
+    </svg>
+  );
+}
+
+function HourglassGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M6 3h12M6 21h12M7 3c0 5 10 7 10 9s-10 4-10 9M17 3c0 5-10 7-10 9s10 4 10 9" />
+    </svg>
+  );
+}
+
+function TimelineGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="3" y1="20" x2="21" y2="20" />
+      <line x1="5" y1="8" x2="14" y2="8" />
+      <line x1="9" y1="14" x2="20" y2="14" />
+      <circle cx="5" cy="8" r="1.4" />
+      <circle cx="9" cy="14" r="1.4" />
+    </svg>
+  );
+}
+
+function MapGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M12 21s-6.5-5.3-6.5-10.4A6.5 6.5 0 0 1 12 4a6.5 6.5 0 0 1 6.5 6.6C18.5 15.7 12 21 12 21Z" />
+      <circle cx="12" cy="10.5" r="2.3" />
+    </svg>
+  );
+}
+
 export default function TreeView({
   persons,
   spouses,
@@ -65,6 +107,7 @@ export default function TreeView({
 }) {
   const [view, setView] = useState<View>("pedigree");
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(
     new Set()
   );
@@ -146,7 +189,7 @@ export default function TreeView({
   // cursor. In outline view the wheel scrolls the list naturally.
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || view === "list") return;
+    if (!el || view === "list" || view === "timeline" || view === "map") return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       applyZoom(
@@ -162,6 +205,7 @@ export default function TreeView({
   /** Drag the canvas background to pan. Drags starting on a card or
    *  button are ignored so clicks keep working normally. */
   function onPanStart(e: React.MouseEvent) {
+    if (view === "map" || view === "timeline") return;
     if ((e.target as HTMLElement).closest("button, .vv-card")) return;
     const c = containerRef.current;
     if (!c) return;
@@ -241,8 +285,12 @@ export default function TreeView({
     const onFocus = (e: Event) => {
       const id = (e as CustomEvent<{ personId?: string }>).detail?.personId;
       if (!id) return;
-      if (view === "chart") {
+      if (view === "chart" || view === "fan" || view === "hourglass") {
         setFocusId(id);
+        return;
+      }
+      if (view === "timeline" || view === "map") {
+        setHighlightId(id);
         return;
       }
       if (view === "list") {
@@ -374,11 +422,15 @@ export default function TreeView({
         <span className="w-px h-5 bg-stone-200 mx-0.5" aria-hidden />
         {viewButton("pedigree", "Pedigree view", <PedigreeGlyph />)}
         {viewButton("chart", "Ancestor chart (horizontal)", <ChartGlyph />)}
+        {viewButton("fan", "Fan chart (radial)", <FanGlyph />)}
+        {viewButton("hourglass", "Hourglass view", <HourglassGlyph />)}
+        {viewButton("timeline", "Timeline view", <TimelineGlyph />)}
+        {viewButton("map", "Map view", <MapGlyph />)}
         {viewButton("list", "Outline view", <ListGlyph />)}
       </div>
 
       {/* ancestor-chart focus picker */}
-      {view === "chart" && effectiveFocusId && (
+      {(view === "chart" || view === "fan" || view === "hourglass") && effectiveFocusId && (
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-white/95 border border-stone-200 rounded-full shadow-sm pl-3 pr-1.5 py-1">
           <label htmlFor="vv-focus" className="text-xs text-stone-500">
             Focus
@@ -426,6 +478,31 @@ export default function TreeView({
             />
           </div>
         </div>
+      ) : view === "fan" ? (
+        <div className="m-auto p-3">
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <FanChartView
+              persons={persons}
+              focusId={effectiveFocusId ?? ""}
+              onFocus={setFocusId}
+            />
+          </div>
+        </div>
+      ) : view === "hourglass" ? (
+        <div className="m-auto p-3">
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <HourglassView
+              persons={persons}
+              spouses={spouses}
+              focusId={effectiveFocusId ?? ""}
+              cb={cb}
+            />
+          </div>
+        </div>
+      ) : view === "timeline" ? (
+        <TimelineView persons={persons} highlightId={highlightId} />
+      ) : view === "map" ? (
+        <MapView persons={persons} highlightId={highlightId} />
       ) : (
         <div
           ref={listRef}
