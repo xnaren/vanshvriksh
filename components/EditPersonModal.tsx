@@ -182,6 +182,22 @@ export default function EditPersonModal({
           </div>
 
           <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="is_public"
+                defaultChecked={person.is_public ?? true}
+                className="w-4 h-4"
+              />
+              Visible to public viewers
+            </label>
+            <p className="text-xs text-stone-500 mt-1">
+              Uncheck to hide this person from anyone who is not a member,
+              when this tree is public. Members always see everyone.
+            </p>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-1">Notes</label>
             <textarea name="notes" rows={2} defaultValue={person.notes ?? ""} />
           </div>

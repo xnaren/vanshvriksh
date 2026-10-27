@@ -88,6 +88,10 @@ function LoginForm() {
             <a href="/signup" className="text-emerald-700 underline">
               Create an account
             </a>
+            {" · "}
+            <a href="/admin/login" className="text-emerald-700 underline">
+              Admin console
+            </a>
           </p>
         </form>
       ) : (

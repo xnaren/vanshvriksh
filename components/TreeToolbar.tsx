@@ -156,6 +156,7 @@ type Panel = "members" | "invite" | "settings" | null;
 export default function TreeToolbar({
   treeId,
   treeName,
+  treeVisibility,
   memberCount,
   role,
   canEdit,
@@ -167,6 +168,7 @@ export default function TreeToolbar({
 }: {
   treeId: string;
   treeName: string;
+  treeVisibility: "invite" | "private" | "public";
   memberCount: number;
   role: string;
   canEdit: boolean;
@@ -405,7 +407,7 @@ export default function TreeToolbar({
               <div className="fixed inset-0 z-40" onClick={() => setPanel(null)} />
               <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white border border-stone-200 rounded-lg shadow-lg p-4">
                 <h4 className="text-sm font-semibold mb-3">Tree settings</h4>
-                <TreeSettings treeId={treeId} currentName={treeName} bare />
+                <TreeSettings treeId={treeId} currentName={treeName} currentVisibility={treeVisibility} bare />
               </div>
             </>
           )}

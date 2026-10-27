@@ -263,6 +263,27 @@ export async function updateTreeName(treeId: string, formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+/** Set a tree's visibility (owners only). 'public' lets anyone view
+ *  the tree (read-only for non-members); 'private' and 'invite' keep
+ *  it members-only. Per-person privacy is separate (see updatePerson). */
+export async function updateTreeVisibility(treeId: string, formData: FormData) {
+  const { supabase, user } = await requireUser();
+  const role = await getTreeRole(treeId, user.id);
+  if (role !== "owner") throw new Error("Only the tree owner can change visibility.");
+
+  const visibility = String(formData.get("visibility") ?? "");
+  if (!["invite", "private", "public"].includes(visibility)) {
+    throw new Error("Choose private, invite-only, or public.");
+  }
+  const { error } = await supabase
+    .from("trees")
+    .update({ visibility })
+    .eq("id", treeId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/trees/${treeId}`);
+  revalidatePath("/dashboard");
+}
+
 /** Delete a tree and everything in it (owners only). DB cascades handle
  *  persons, spouses, memberships and invites. */
 export async function deleteTree(treeId: string) {
@@ -299,6 +320,9 @@ export async function updatePerson(
     ...personDetails(formData),
     dod: String(formData.get("dod") ?? "") || null,
     is_living: formData.get("is_living") === "on",
+    // Unchecked = private: hidden from non-member viewers of a public
+    // tree, still fully visible to the tree's members.
+    is_public: formData.get("is_public") === "on",
   };
   // undefined = photo untouched; null = removed; string = new upload.
   if (photo_url !== undefined) update.photo_url = photo_url;

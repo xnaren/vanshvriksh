@@ -1,6 +1,12 @@
 // Tree detail page: full-bleed pedigree canvas. The tree name and its
 // icon controls (TreeToolbar) render into the app header's slot, so
 // this page is just the canvas.
+//
+// Access: members see everything (RLS enforces their role); a public
+// tree is also viewable without signing in and without membership —
+// read-only, with no roster, and with private persons/spouses already
+// filtered out by the public RLS policies. Private/invite trees still
+// 404 for non-members.
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getTreeRole } from "@/lib/auth";
@@ -17,19 +23,22 @@ export default async function TreePage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
 
   const treeId = params.id;
 
   const { data: tree } = await supabase
     .from("trees")
-    .select("id, name")
+    .select("id, name, visibility")
     .eq("id", treeId)
     .single();
   if (!tree) notFound();
 
-  const role = await getTreeRole(treeId, user.id);
-  if (!role) notFound(); // not a member — RLS would block reads anyway
+  const role = user ? await getTreeRole(treeId, user.id) : null;
+  if (!role && tree.visibility !== "public") {
+    // Not a member of a non-public tree: members-only, as before.
+    if (!user) redirect("/login");
+    notFound();
+  }
   const canEdit = role === "owner" || role === "editor";
 
   const { data: persons } = await supabase
@@ -43,14 +52,18 @@ export default async function TreePage({
     .select("*")
     .eq("tree_id", treeId);
 
-  const { data: rosterData } = await supabase
-    .from("tree_members")
-    .select("role, profiles (username)")
-    .eq("tree_id", treeId);
-
-  // supabase-js (untyped client) infers the embedded `profiles` as an array;
-  // at runtime PostgREST returns this many-to-one join as an object (or null).
-  const roster = (rosterData ?? []) as unknown as RosterEntry[];
+  // The account roster is members-only even on a public tree.
+  let roster: RosterEntry[] = [];
+  if (role) {
+    const { data: rosterData } = await supabase
+      .from("tree_members")
+      .select("role, profiles (username)")
+      .eq("tree_id", treeId);
+    // supabase-js (untyped client) infers the embedded `profiles` as an
+    // array; at runtime PostgREST returns this many-to-one join as a
+    // single object (or null), so cast explicitly like Person[]/SpouseLink[].
+    roster = (rosterData ?? []) as unknown as RosterEntry[];
+  }
 
   const personList = (persons ?? []) as Person[];
   const spouseList = (spouses ?? []) as SpouseLink[];
@@ -60,8 +73,9 @@ export default async function TreePage({
       <TreeToolbar
         treeId={treeId}
         treeName={tree.name}
+        treeVisibility={tree.visibility as "invite" | "private" | "public"}
         memberCount={personList.length}
-        role={role}
+        role={role ?? "public viewer"}
         canEdit={canEdit}
         isOwner={role === "owner"}
         persons={personList.map((p) => ({

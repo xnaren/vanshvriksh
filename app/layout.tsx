@@ -26,9 +26,16 @@ export default function RootLayout({
               id="vv-header-slot"
               className="flex-1 min-w-0 flex items-center justify-center"
             />
-            <nav className="flex gap-3 text-sm shrink-0">
-              <a href="/dashboard" className="hover:underline">My trees</a>
+            <nav className="flex items-center gap-3 text-sm shrink-0">
+              <a href="/about" className="hover:underline hidden sm:inline">About</a>
+              <a href="/dashboard" className="hover:underline hidden sm:inline">My trees</a>
               <a href="/login" className="hover:underline">Log in</a>
+              <a
+                href="/signup"
+                className="bg-emerald-700 text-white rounded-md px-3 py-1.5 font-medium hover:bg-emerald-800"
+              >
+                Start tree
+              </a>
             </nav>
           </div>
         </header>
@@ -37,7 +44,9 @@ export default function RootLayout({
             full-bleed so the canvas uses the whole window width. */}
         <main className="w-full">{children}</main>
         <footer className="max-w-5xl mx-auto px-4 py-6 text-xs text-stone-500 border-t border-stone-200 mt-12">
-          VanshVriksh — baseline MVP. Your family data belongs to your family.
+          VanshVriksh — connecting families across time and space, preserving
+          generations and legacies. Your family data belongs to your family.{" "}
+          <a href="/about" className="underline">About</a>
         </footer>
       </body>
     </html>

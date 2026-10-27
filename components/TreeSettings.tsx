@@ -1,22 +1,26 @@
-// Tree settings: rename. Rendered on the tree page for owners only —
-// the server action enforces it too. (Delete lives in the top toolbar.)
+// Tree settings: rename + visibility. Rendered on the tree page for
+// owners only — the server actions enforce it too. (Delete lives in
+// the top toolbar.)
 "use client";
 
 import { useState } from "react";
-import { updateTreeName } from "@/app/trees/[id]/actions";
+import { updateTreeName, updateTreeVisibility } from "@/app/trees/[id]/actions";
 
 export default function TreeSettings({
   treeId,
   currentName,
+  currentVisibility,
   bare,
 }: {
   treeId: string;
   currentName: string;
-  /** Render without the outer card chrome (for embedding in a popover). */
+  currentVisibility: "invite" | "private" | "public";
   bare?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [visBusy, setVisBusy] = useState(false);
+  const [visMsg, setVisMsg] = useState("");
 
   async function onRename(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,6 +33,19 @@ export default function TreeSettings({
       setMsg(`Error: ${(err as Error).message}`);
     }
     setBusy(false);
+  }
+
+  async function onVisibility(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setVisBusy(true);
+    setVisMsg("");
+    try {
+      await updateTreeVisibility(treeId, new FormData(e.currentTarget));
+      setVisMsg("Visibility saved ✓");
+    } catch (err) {
+      setVisMsg(`Error: ${(err as Error).message}`);
+    }
+    setVisBusy(false);
   }
 
   return (
@@ -50,6 +67,22 @@ export default function TreeSettings({
         </div>
       </form>
       {msg && <p className="text-sm">{msg}</p>}
+      <form onSubmit={onVisibility} className="space-y-2">
+        <label className="block text-sm font-medium">Who can view this tree</label>
+        <select name="visibility" defaultValue={currentVisibility}>
+          <option value="private">Private — members only</option>
+          <option value="invite">Invite-only — members only</option>
+          <option value="public">Public — anyone can view (members still edit)</option>
+        </select>
+        <p className="text-xs text-stone-500">
+          In a public tree, members marked private in their edit form are
+          hidden from public viewers.
+        </p>
+        <button type="submit" disabled={visBusy} className="btn-secondary">
+          {visBusy ? "Saving…" : "Save visibility"}
+        </button>
+      </form>
+      {visMsg && <p className="text-sm">{visMsg}</p>}
     </div>
   );
 }

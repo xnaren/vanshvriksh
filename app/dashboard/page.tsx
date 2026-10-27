@@ -30,6 +30,15 @@ export default async function DashboardPage() {
     }))
     .filter((t) => t.id);
 
+  // Public trees anyone signed in can view (read-only unless a member).
+  const { data: publicTrees } = await supabase
+    .from("trees")
+    .select("id, name, created_at")
+    .eq("visibility", "public")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const publicList = (publicTrees ?? []) as Tree[];
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold mb-1">
@@ -89,6 +98,29 @@ export default async function DashboardPage() {
           </form>
         </div>
       </div>
+
+      {publicList.length > 0 && (
+        <div className="mt-8">
+          <h2 className="font-semibold mb-3">Public trees</h2>
+          <p className="text-xs text-stone-500 mb-3">
+            Anyone can view these. You can only edit the ones you belong to.
+          </p>
+          <div className="space-y-3">
+            {publicList.map((t) => (
+              <Link
+                key={t.id}
+                href={`/trees/${t.id}`}
+                className="card block hover:border-emerald-400"
+              >
+                <span className="font-medium">🌳 {t.name}</span>
+                <span className="text-xs text-stone-500 bg-stone-100 rounded px-2 py-0.5 ml-2">
+                  public
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

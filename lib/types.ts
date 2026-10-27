@@ -15,7 +15,7 @@ export interface Tree {
   id: string;
   name: string;
   created_by: string | null;
-  visibility: "invite" | "private";
+  visibility: "invite" | "private" | "public";
   created_at: string;
 }
 
@@ -35,6 +35,8 @@ export interface Person {
   photo_url: string | null;
   notes: string | null;
   is_living: boolean;
+  /** False = hidden from non-member viewers of a public tree. */
+  is_public: boolean;
   father_id: string | null;
   mother_id: string | null;
   created_by: string | null;
