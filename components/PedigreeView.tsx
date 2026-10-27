@@ -50,7 +50,11 @@ export default function PedigreeView({
   cb: ViewCallbacks;
 }) {
   const layout = useMemo(
-    () => layoutSingleTree(persons, spouses),
+    // Tighter generation rows: 100px rows with 58px cards leave a
+    // 42px parent->child gap, down from 92px (150px rows) — the
+    // vertical lines are now less than half their old length.
+    // Hourglass keeps the old 150px rows (its own layout).
+    () => layoutSingleTree(persons, spouses, { rowH: 100 }),
     [persons, spouses]
   );
   const card = (person: Person) => (

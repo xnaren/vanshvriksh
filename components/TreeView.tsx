@@ -10,6 +10,7 @@ import { deletePerson } from "@/app/trees/[id]/actions";
 import EditPersonModal from "./EditPersonModal";
 import AddRelativeModal from "./AddRelativeModal";
 import PedigreeView, { type ViewCallbacks } from "./PedigreeView";
+import CircleView from "./CircleView";
 import TreeListView from "./TreeListView";
 import AncestorChartView from "./AncestorChartView";
 import FanChartView from "./FanChartView";
@@ -19,7 +20,7 @@ import MapView from "./MapView";
 import { displayName } from "./MemberCard";
 import { layoutSingleTree, defaultAncestorFocus } from "./tree-graph";
 
-type View = "pedigree" | "list" | "chart" | "fan" | "hourglass" | "timeline" | "map";
+type View = "pedigree" | "circles" | "list" | "chart" | "fan" | "hourglass" | "timeline" | "map";
 
 function PedigreeGlyph() {
   return (
@@ -28,6 +29,16 @@ function PedigreeGlyph() {
       <circle cx="5.5" cy="19.5" r="2.5" />
       <circle cx="18.5" cy="19.5" r="2.5" />
       <path d="M12 7v4.5M12 11.5 5.5 17M12 11.5l6.5 5.5" />
+    </svg>
+  );
+}
+
+function CircleGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="7" cy="12" r="4" />
+      <circle cx="17" cy="12" r="4" />
+      <path d="M11 12h2" />
     </svg>
   );
 }
@@ -421,6 +432,7 @@ export default function TreeView({
         </button>
         <span className="w-px h-5 bg-stone-200 mx-0.5" aria-hidden />
         {viewButton("pedigree", "Pedigree view", <PedigreeGlyph />)}
+        {viewButton("circles", "Circular nodes view", <CircleGlyph />)}
         {viewButton("chart", "Ancestor chart (horizontal)", <ChartGlyph />)}
         {viewButton("fan", "Fan chart (radial)", <FanGlyph />)}
         {viewButton("hourglass", "Hourglass view", <HourglassGlyph />)}
@@ -464,6 +476,12 @@ export default function TreeView({
         <div className="m-auto p-3">
           <div ref={treeRef} style={{ zoom }} className="relative">
             <PedigreeView persons={persons} spouses={spouses} cb={cb} />
+          </div>
+        </div>
+      ) : view === "circles" ? (
+        <div className="m-auto p-3">
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <CircleView persons={persons} spouses={spouses} cb={cb} />
           </div>
         </div>
       ) : view === "chart" ? (

@@ -229,10 +229,26 @@ export interface TreeLayout {
 
 const unitW = (pair?: Person) => (pair ? CARD_W * 2 + JUNCTION_W : CARD_W);
 
+export interface SingleTreeOptions {
+  cardW?: number;
+  cardH?: number;
+  junctionW?: number;
+  rowH?: number;
+  hGap?: number;
+}
+
 export function layoutSingleTree(
   persons: Person[],
-  spouses: SpouseLink[]
+  spouses: SpouseLink[],
+  options: SingleTreeOptions = {}
 ): TreeLayout {
+  const cw = options.cardW ?? CARD_W;
+  const ch = options.cardH ?? CARD_H;
+  const junctionW = options.junctionW ?? JUNCTION_W;
+  const rowH = options.rowH ?? ROW_H;
+  const hGap = options.hGap ?? H_GAP;
+  const unitWLocal = (pair?: Person) =>
+    pair ? cw * 2 + junctionW : cw;
   const graph = buildTreeGraph(persons, spouses);
 
   // Pairing — identical rule to buildFamilyUnits: the partner with
@@ -364,8 +380,8 @@ export function layoutSingleTree(
     const u = unitOf.get(key)!;
     const x = xOf.get(key)!;
     return u.pair && u.main.id !== pid
-      ? x + CARD_W + JUNCTION_W + CARD_W / 2
-      : x + CARD_W / 2;
+      ? x + cw + junctionW + cw / 2
+      : x + cw / 2;
   };
   const placedPersons = new Set<string>();
   const markPlaced = (key: string) => {
@@ -376,15 +392,15 @@ export function layoutSingleTree(
   const spanOf = new Map<string, number>();
   const measure = (key: string, seen = new Set<string>()): number => {
     if (spanOf.has(key)) return spanOf.get(key)!;
-    if (seen.has(key)) return unitW(unitOf.get(key)!.pair);
+    if (seen.has(key)) return unitWLocal(unitOf.get(key)!.pair);
     seen.add(key);
     const kids = hostedChildUnits(key);
-    let w = unitW(unitOf.get(key)!.pair);
+    let w = unitWLocal(unitOf.get(key)!.pair);
     if (kids.length > 0) {
       w = Math.max(
         w,
         kids.reduce((s, k) => s + measure(k, seen), 0) +
-          H_GAP * (kids.length - 1)
+          hGap * (kids.length - 1)
       );
     }
     spanOf.set(key, w);
@@ -392,7 +408,7 @@ export function layoutSingleTree(
   };
   const placeBackbone = (key: string, left: number, g: number) => {
     genOf.set(key, g);
-    const w = unitW(unitOf.get(key)!.pair);
+    const w = unitWLocal(unitOf.get(key)!.pair);
     const boxLeft = left + (measure(key) - w) / 2;
     xOf.set(key, boxLeft);
     occupy(g, boxLeft, boxLeft + w);
@@ -400,7 +416,7 @@ export function layoutSingleTree(
     let x = left;
     for (const cu of hostedChildUnits(key)) {
       placeBackbone(cu, x, g + 1);
-      x += measure(cu) + H_GAP;
+      x += measure(cu) + hGap;
     }
   };
 
@@ -419,7 +435,7 @@ export function layoutSingleTree(
         const pu = parentUnitOf(p);
         if (pu && !xOf.has(pu)) {
           const g = genOf.get(unitOfPerson.get(pid)!)! - 1;
-          const w = unitW(unitOf.get(pu)!.pair);
+          const w = unitWLocal(unitOf.get(pu)!.pair);
           const left = shiftToFit(g, cardCenterX(pid), w);
           xOf.set(pu, left);
           genOf.set(pu, g);
@@ -440,7 +456,7 @@ export function layoutSingleTree(
               : c.mother_id!;
           const left = shiftToFit(
             g,
-            cardCenterX(parent) + CARD_W + 140,
+            cardCenterX(parent) + cw + 140,
             measure(cu)
           );
           placeBackbone(cu, left, g);
@@ -461,7 +477,7 @@ export function layoutSingleTree(
     placeForest(r, cursorX);
     const placedWidth = Math.max(
       ...Array.from(xOf.entries()).map(
-        ([k, x]) => x + unitW(unitOf.get(k)!.pair)
+        ([k, x]) => x + unitWLocal(unitOf.get(k)!.pair)
       ),
       0
     );
@@ -581,14 +597,14 @@ export function layoutSingleTree(
   }
   byParent.forEach((kids, pu) => {
     const g = genOf.get(pu)!;
-    const bandTop = (g + 1) * ROW_H - (ROW_H - CARD_H);
+    const bandTop = (g + 1) * rowH - (rowH - ch);
     const stemX =
       xOf.get(pu)! +
-      (unitOf.get(pu)!.pair ? CARD_W + JUNCTION_W / 2 : CARD_W / 2);
+      (unitOf.get(pu)!.pair ? cw + junctionW / 2 : cw / 2);
     const drops = kids.map((c) => ({
       personId: c.id,
       x: cardCenterX(c.id),
-      top: (g + 1) * ROW_H,
+      top: (g + 1) * rowH,
       side: dropSide(c),
     }));
     drops.sort((a, b) => a.x - b.x); // canonical: left to right
@@ -611,7 +627,7 @@ export function layoutSingleTree(
       side: forkSide,
       style,
       stemX,
-      stemTop: g * ROW_H + CARD_H,
+      stemTop: g * rowH + ch,
       barY: bandTop + 12, // lane adjusted below
       barX0: Math.min(...xs),
       barX1: Math.max(...xs),
@@ -628,7 +644,7 @@ export function layoutSingleTree(
     bands.set(g, list);
   }
   bands.forEach((list, g) => {
-    const bandTop = (g + 1) * ROW_H - (ROW_H - CARD_H);
+    const bandTop = (g + 1) * rowH - (rowH - ch);
     const lanes: [number, number, number][] = [];
     for (const f of [...list].sort((a, b) => a.barX0 - b.barX0)) {
       const used = new Set(
@@ -649,12 +665,12 @@ export function layoutSingleTree(
     pair: u.pair,
     spouseNote: u.spouseNote,
     x: xOf.get(key) ?? 0,
-    y: (genOf.get(key) ?? 0) * ROW_H,
+    y: (genOf.get(key) ?? 0) * rowH,
     gen: genOf.get(key) ?? 0,
   }));
   const width =
-    Math.max(...units.map((u) => u.x + unitW(u.pair)), 0) + 8;
-  const height = (Math.max(...units.map((u) => u.gen), 0) + 1) * ROW_H + 8;
+    Math.max(...units.map((u) => u.x + unitWLocal(u.pair)), 0) + 8;
+  const height = (Math.max(...units.map((u) => u.gen), 0) + 1) * rowH + 8;
   return { units, forks, width, height };
 }
 
