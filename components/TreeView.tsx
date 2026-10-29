@@ -15,12 +15,13 @@ import TreeListView from "./TreeListView";
 import AncestorChartView from "./AncestorChartView";
 import FanChartView from "./FanChartView";
 import HourglassView from "./HourglassView";
+import DescendantChartView from "./DescendantChartView";
 import TimelineView from "./TimelineView";
 import MapView from "./MapView";
 import { displayName } from "./MemberCard";
-import { layoutSingleTree, defaultAncestorFocus } from "./tree-graph";
+import { layoutSingleTree, defaultAncestorFocus, defaultDescendantFocus } from "./tree-graph";
 
-type View = "pedigree" | "circles" | "list" | "chart" | "fan" | "hourglass" | "timeline" | "map";
+type View = "pedigree" | "circles" | "list" | "chart" | "fan" | "hourglass" | "descendant" | "timeline" | "map";
 
 function PedigreeGlyph() {
   return (
@@ -80,6 +81,18 @@ function HourglassGlyph() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
       <path d="M6 3h12M6 21h12M7 3c0 5 10 7 10 9s-10 4-10 9M17 3c0 5-10 7-10 9s10 4 10 9" />
+    </svg>
+  );
+}
+
+function DescendantGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="8" cy="4.5" r="2.5" />
+      <circle cx="16" cy="4.5" r="2.5" />
+      <path d="M10.5 4.5h3M12 7v4.5M12 11.5 5.5 17M12 11.5l6.5 5.5" />
+      <circle cx="5.5" cy="19.5" r="2.5" />
+      <circle cx="18.5" cy="19.5" r="2.5" />
     </svg>
   );
 }
@@ -296,7 +309,7 @@ export default function TreeView({
     const onFocus = (e: Event) => {
       const id = (e as CustomEvent<{ personId?: string }>).detail?.personId;
       if (!id) return;
-      if (view === "chart" || view === "fan" || view === "hourglass") {
+      if (view === "chart" || view === "fan" || view === "hourglass" || view === "descendant") {
         setFocusId(id);
         return;
       }
@@ -337,10 +350,16 @@ export default function TreeView({
     () => defaultAncestorFocus(persons),
     [persons]
   );
+  const descendantDefault = useMemo(
+    () => defaultDescendantFocus(persons, spouses),
+    [persons, spouses]
+  );
   const effectiveFocusId =
     focusId && persons.some((p) => p.id === focusId)
       ? focusId
-      : (defaultFocus?.id ?? persons[0]?.id);
+      : view === "descendant"
+        ? (descendantDefault?.id ?? defaultFocus?.id ?? persons[0]?.id)
+        : (defaultFocus?.id ?? persons[0]?.id);
   const toggleCollapse = (id: string) =>
     setCollapsedIds((cur) => {
       const next = new Set<string>(Array.from(cur));
@@ -436,13 +455,14 @@ export default function TreeView({
         {viewButton("chart", "Ancestor chart (horizontal)", <ChartGlyph />)}
         {viewButton("fan", "Fan chart (radial)", <FanGlyph />)}
         {viewButton("hourglass", "Hourglass view", <HourglassGlyph />)}
+        {viewButton("descendant", "Descendant chart (sample style)", <DescendantGlyph />)}
         {viewButton("timeline", "Timeline view", <TimelineGlyph />)}
         {viewButton("map", "Map view", <MapGlyph />)}
         {viewButton("list", "Outline view", <ListGlyph />)}
       </div>
 
       {/* ancestor-chart focus picker */}
-      {(view === "chart" || view === "fan" || view === "hourglass") && effectiveFocusId && (
+      {(view === "chart" || view === "fan" || view === "hourglass" || view === "descendant") && effectiveFocusId && (
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2 bg-white/95 border border-stone-200 rounded-full shadow-sm pl-3 pr-1.5 py-1">
           <label htmlFor="vv-focus" className="text-xs text-stone-500">
             Focus
@@ -510,6 +530,17 @@ export default function TreeView({
         <div className="m-auto p-3">
           <div ref={treeRef} style={{ zoom }} className="relative">
             <HourglassView
+              persons={persons}
+              spouses={spouses}
+              focusId={effectiveFocusId ?? ""}
+              cb={cb}
+            />
+          </div>
+        </div>
+      ) : view === "descendant" ? (
+        <div className="m-auto p-3">
+          <div ref={treeRef} style={{ zoom }} className="relative">
+            <DescendantChartView
               persons={persons}
               spouses={spouses}
               focusId={effectiveFocusId ?? ""}

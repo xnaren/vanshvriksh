@@ -797,6 +797,54 @@ export function layoutAncestorChart(
   return { nodes, edges, width, height };
 }
 
+/** Default focus for the descendant chart: the person whose couple
+ *  has the most descendants (so the chart opens on a full tree, not
+ *  a leaf). Ties go to the earliest person in the list. Returns null
+ *  when nobody has any descendants. */
+export function defaultDescendantFocus(
+  persons: Person[],
+  spouses: SpouseLink[]
+): Person | null {
+  if (persons.length === 0) return null;
+  const graph = buildTreeGraph(persons, spouses);
+  const countDescendants = (p: Person): number => {
+    const seen = new Set<string>();
+    const stack: Person[] = [p];
+    const spouseId = graph.partnerOf.get(p.id);
+    if (spouseId) {
+      const s = graph.byId.get(spouseId);
+      if (s) stack.push(s);
+    }
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      for (const c of graph.childrenOf.get(cur.id) ?? []) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        stack.push(c);
+        const cs = graph.partnerOf.get(c.id);
+        if (cs) {
+          const sp = graph.byId.get(cs);
+          if (sp && !seen.has(sp.id)) stack.push(sp);
+        }
+      }
+    }
+    // seen holds descendants only (p and their spouse were queued,
+    // never added to seen) — except a spouse reached via a child,
+    // which is a genuine descendant-line member, not the root.
+    return seen.size;
+  };
+  let best = persons[0];
+  let bestCount = -1;
+  for (const p of persons) {
+    const c = countDescendants(p);
+    if (c > bestCount) {
+      best = p;
+      bestCount = c;
+    }
+  }
+  return bestCount > 0 ? best : null;
+}
+
 /** The person with the most recorded ancestors (ties: first in tree
  *  order) — the natural default focus for the ancestor chart. */
 export function defaultAncestorFocus(persons: Person[]): Person | null {
@@ -1237,6 +1285,205 @@ export function layoutHourglass(
     forks,
     width: maxX - minX,
     height: (maxGen - minGen + 1) * ROW_H - (ROW_H - CARD_H),
+    focusKey,
+  };
+}
+
+/* ======================================================================
+ * Descendant chart layout (the Nehru sample chart, for a real tree).
+ *
+ * Focus couple at the top row, descendants flowing below, generation
+ * by generation: couples sit side by side joined by a marriage link,
+ * children drop from the couple's midpoint down to a bar, then to
+ * each child couple's midpoint — exactly the sample's geometry.
+ * Unlike pedigree, this shows descendants only: a child's spouse
+ * appears beside them, but the spouse's own parents do not.
+ * Spouse pairing follows partnerOf (one spouse per person), so
+ * children of a second union are not drawn under this couple —
+ * the same limitation the pedigree view carries.
+ * ==================================================================== */
+
+export interface DescendantLayout {
+  units: PlacedUnit[];
+  forks: ForkLine[];
+  /** Marriage link per couple: across the junction, at card mid-height. */
+  couples: { x0: number; x1: number; y: number }[];
+  width: number;
+  height: number;
+  focusKey: string;
+}
+
+const DESC_ROW_H = 140;
+
+export function layoutDescendantChart(
+  persons: Person[],
+  spouses: SpouseLink[],
+  focusId: string
+): DescendantLayout | null {
+  const graph = buildTreeGraph(persons, spouses);
+  const focus = graph.byId.get(focusId);
+  if (!focus) return null;
+
+  interface DU {
+    key: string;
+    main: Person;
+    pair?: Person;
+  }
+  const units = new Map<string, DU>();
+  const addCouple = (a: Person, b?: Person): string => {
+    // Husband-left ordering, as in the pedigree view.
+    let main = a;
+    let pair = b;
+    if (pair && pair.gender === "male" && main.gender !== "male") {
+      main = pair;
+      pair = a;
+    }
+    const key = main.id;
+    if (!units.has(key)) units.set(key, { key, main, pair });
+    return key;
+  };
+  const spouseOf = (p: Person): Person | undefined => {
+    const sId = graph.partnerOf.get(p.id);
+    return sId ? graph.byId.get(sId) : undefined;
+  };
+  const rank = (p: Person) =>
+    p.gender === "female" ? 0 : p.gender === "male" ? 2 : 1;
+  const downChildren = (u: DU): Person[] => {
+    // Same hosting rule as the hourglass descendants: a child with
+    // both parents recorded belongs to the couple matching both,
+    // otherwise to the recorded parent's couple. Sisters first.
+    const memberIds = new Set(
+      [u.main.id, u.pair?.id].filter(Boolean) as string[]
+    );
+    const out: Person[] = [];
+    for (const m of [u.main, u.pair]) {
+      if (!m) continue;
+      for (const c of graph.childrenOf.get(m.id) ?? []) {
+        if (out.some((o) => o.id === c.id)) continue;
+        const otherParent =
+          c.father_id === m.id ? c.mother_id : c.father_id;
+        if (
+          otherParent &&
+          graph.byId.has(otherParent) &&
+          !memberIds.has(otherParent)
+        ) {
+          const partner = spouseOf(m);
+          if (partner && partner.id !== otherParent) continue;
+        }
+        out.push(c);
+      }
+    }
+    out.sort((a, b) => rank(a) - rank(b));
+    return out;
+  };
+  const downUnitOf = (child: Person): string =>
+    addCouple(child, spouseOf(child));
+
+  const span = new Map<string, number>();
+  const measure = (key: string, seen: Set<string>): number => {
+    if (span.has(key)) return span.get(key)!;
+    if (seen.has(key)) return unitW(units.get(key)!.pair);
+    seen.add(key);
+    const u = units.get(key)!;
+    let w = unitW(u.pair);
+    const kidUnits = downChildren(u).map((c) => downUnitOf(c));
+    if (kidUnits.length > 0) {
+      w = Math.max(
+        w,
+        kidUnits.reduce((s, k) => s + measure(k, new Set(seen)), 0) +
+          H_GAP * (kidUnits.length - 1)
+      );
+    }
+    span.set(key, w);
+    return w;
+  };
+
+  const pos = new Map<string, { x: number; gen: number }>();
+  let maxGen = 0;
+  const place = (
+    key: string,
+    left: number,
+    gen: number,
+    seen: Set<string>
+  ) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    const u = units.get(key)!;
+    const w = unitW(u.pair);
+    pos.set(key, { x: left + (measure(key, new Set()) - w) / 2, gen });
+    maxGen = Math.max(maxGen, gen);
+    let x = left;
+    for (const c of downChildren(u)) {
+      const ck = downUnitOf(c);
+      place(ck, x, gen + 1, seen);
+      x += measure(ck, new Set()) + H_GAP;
+    }
+  };
+
+  const focusKey = addCouple(focus, spouseOf(focus));
+  const totalW = measure(focusKey, new Set());
+  place(focusKey, 0, 0, new Set());
+
+  const placed: PlacedUnit[] = [];
+  units.forEach((u) => {
+    const p = pos.get(u.key);
+    if (!p) return;
+    placed.push({
+      key: u.key,
+      main: u.main,
+      pair: u.pair,
+      x: p.x,
+      y: p.gen * DESC_ROW_H,
+      gen: p.gen,
+    });
+  });
+  placed.sort((a, b) => a.gen - b.gen || a.x - b.x);
+
+  const centerX = (u: PlacedUnit) => u.x + unitW(u.pair) / 2;
+  const forks: ForkLine[] = [];
+  const couples: DescendantLayout["couples"] = [];
+  placed.forEach((u) => {
+    if (u.pair) {
+      couples.push({
+        x0: u.x + CARD_W,
+        x1: u.x + CARD_W + JUNCTION_W,
+        y: u.y + CARD_H / 2,
+      });
+    }
+    const kids = downChildren({ key: u.key, main: u.main, pair: u.pair });
+    if (kids.length === 0) return;
+    const kidUnits = kids
+      .map((c) =>
+        placed.find((p) => p.main.id === c.id || p.pair?.id === c.id)
+      )
+      .filter((p): p is PlacedUnit => Boolean(p));
+    if (kidUnits.length === 0) return;
+    const stemX = centerX(u);
+    const dropXs = kidUnits.map((k) => centerX(k));
+    forks.push({
+      parentKey: u.key,
+      side: "shared",
+      style: "solid",
+      stemX,
+      stemTop: u.y + CARD_H,
+      barY: u.y + CARD_H + (DESC_ROW_H - CARD_H) / 2,
+      barX0: Math.min(stemX, ...dropXs),
+      barX1: Math.max(stemX, ...dropXs),
+      drops: kidUnits.map((k) => ({
+        personId: k.main.id,
+        x: centerX(k),
+        top: k.y,
+        side: "shared" as const,
+      })),
+    });
+  });
+
+  return {
+    units: placed,
+    forks,
+    couples,
+    width: totalW,
+    height: (maxGen + 1) * DESC_ROW_H - (DESC_ROW_H - CARD_H),
     focusKey,
   };
 }
