@@ -97,11 +97,6 @@ export default function Home() {
             </div>
           ))}
         </div>
-        <p className="text-center text-sm text-stone-500 mt-6">
-          Built for Indian families: gotra, family name and native place on
-          every person · invite relatives to build one tree together ·
-          passwordless login, no passwords to forget.
-        </p>
       </section>
     </div>
   );

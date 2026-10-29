@@ -22,7 +22,16 @@ import TreeSettings from "./TreeSettings";
 function HeaderPortal({ children }: { children: React.ReactNode }) {
   const [target, setTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
-    setTarget(document.getElementById("vv-header-slot"));
+    const slot = document.getElementById("vv-header-slot");
+    setTarget(slot);
+    // Tree pages get the tree pill, not the header tagline: lift the
+    // tagline out while this toolbar is mounted, restore it on unmount
+    // (client-side navigation back to a non-tree page).
+    const tagline = slot?.querySelector("#vv-tagline");
+    tagline?.remove();
+    return () => {
+      if (slot && tagline) slot.prepend(tagline);
+    };
   }, []);
   if (!target) return null;
   return createPortal(children, target);

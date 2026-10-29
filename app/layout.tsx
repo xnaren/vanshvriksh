@@ -20,12 +20,20 @@ export default function RootLayout({
             <a href="/" className="font-bold text-lg text-emerald-800 shrink-0">
               🌳 VanshVriksh <span className="font-normal text-stone-500">वंशवृक्ष</span>
             </a>
-            {/* Tree pages portal their name + controls into this slot
-                (see TreeToolbar's HeaderPortal). Empty elsewhere. */}
+            {/* Center tagline — shown on every page except tree pages,
+                where TreeToolbar's portal replaces it with the tree pill. */}
             <div
               id="vv-header-slot"
               className="flex-1 min-w-0 flex items-center justify-center"
-            />
+            >
+              <p
+                id="vv-tagline"
+                className="text-sm text-stone-500 hidden md:block truncate"
+              >
+                Connecting families across time and space, preserving
+                memories, generations and legacies.
+              </p>
+            </div>
             <nav className="flex items-center gap-3 text-sm shrink-0">
               <a href="/about" className="hover:underline hidden sm:inline">About</a>
               <a href="/dashboard" className="hover:underline hidden sm:inline">My trees</a>
@@ -43,11 +51,6 @@ export default function RootLayout({
             use a centered max-w-5xl column; the tree page goes
             full-bleed so the canvas uses the whole window width. */}
         <main className="w-full">{children}</main>
-        <footer className="max-w-5xl mx-auto px-4 py-6 text-xs text-stone-500 border-t border-stone-200 mt-12">
-          VanshVriksh — connecting families across time and space, preserving
-          generations and legacies. Your family data belongs to your family.{" "}
-          <a href="/about" className="underline">About</a>
-        </footer>
       </body>
     </html>
   );
